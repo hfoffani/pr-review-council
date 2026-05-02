@@ -1,8 +1,13 @@
-# pr-review-council (`prc`)
+# PR Review LLM Council (`prc`)
 
-Multi-LLM council code review for local git branches.
+![prreviewllmcouncil](images/banner-pr-council.png)
 
-`prc` takes a repo + branch, computes the three-dot diff against the auto-detected base, sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent review in parallel, has them critique each other, then a configurable Chairman LLM synthesizes the council's reviews into a final markdown PR review printed to stdout.
+Multi-LLM council code review for local git branches. Inspired by Andrej Karpathy's
+[LLM Council](https://github.com/karpathy/llm-council),
+`prc` takes a repo + branch, computes the three-dot diff against the auto-detected base,
+sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent review in parallel,
+has them critique each other, then a configurable Chairman LLM synthesizes
+the council's reviews into a final markdown PR review printed to stdout.
 
 ## Install
 
