@@ -9,6 +9,15 @@ sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent rev
 has them critique each other, then a configurable Chairman LLM synthesizes
 the council's reviews into a final markdown PR review printed to stdout.
 
+## How it works
+
+1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
+2. **Round 1 (parallel)** — every council member reviews the diff blind.
+3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
+4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
+
+Models never see real identities of peers; the orchestrator holds the letter mapping in memory only.
+
 ## Install
 
 Install with `uv`:
@@ -195,15 +204,6 @@ and has an API key resolved from config or env vars. It does not make network
 calls or validate the key with the provider, so it does not consume LLM tokens.
 
 Exit codes: `0` ok · `2` chair failed · `3` council collapsed (<2 R1 survivors) · `4` git/diff error · `5` config or missing API key.
-
-## How it works
-
-1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
-2. **Round 1 (parallel)** — every council member reviews the diff blind.
-3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
-4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
-
-Models never see real identities of peers; the orchestrator holds the letter mapping in memory only.
 
 ## Tests
 
