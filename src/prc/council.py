@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import IO
+from typing import IO, Literal
 
 from .context import ContextProvider
 from .prompts import CROSS_EVAL_SYSTEM, REVIEWER_SYSTEM
@@ -28,6 +29,20 @@ def _letter(idx: int) -> str:
 
 
 _TRANSIENT = ("500", "502", "503", "504", "timeout", "Connection", "ECONN")
+CouncilPhase = Literal["r1", "r2"]
+ProgressCallback = Callable[[CouncilPhase], None]
+
+
+def _notify_progress(
+    progress: ProgressCallback | None, phase: CouncilPhase
+) -> None:
+    if progress is None:
+        return
+
+    try:
+        progress(phase)
+    except Exception:
+        return
 
 
 def _try_chat(
@@ -49,6 +64,7 @@ def run_council(
     timeout: float = 180.0,
     verbose: bool = False,
     log_stream: IO[str] = sys.stderr,
+    progress: ProgressCallback | None = None,
 ) -> CouncilOutcome:
     if not reviewers:
         raise ValueError("council is empty")
@@ -57,6 +73,7 @@ def run_council(
     out = CouncilOutcome()
 
     # Round 1 — independent reviews
+    _notify_progress(progress, "r1")
     user_r1 = context.render()
     with ThreadPoolExecutor(max_workers=len(reviewers)) as ex:
         futs = {
@@ -85,6 +102,7 @@ def run_council(
         return out  # caller decides whether to abort
 
     # Round 2 — cross-evaluation among survivors
+    _notify_progress(progress, "r2")
     survivors = [(letter, by_letter[letter]) for letter in out.r1]
     with ThreadPoolExecutor(max_workers=len(survivors)) as ex:
         futs2 = {}

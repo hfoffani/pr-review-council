@@ -76,3 +76,58 @@ def test_chair_on_council_reuses_instance() -> None:
     assert len(chair.calls) == 2  # R1 + R2
     assert len(other.calls) == 2
     assert set(out.r1) == {"A", "B"}
+
+
+def test_progress_reports_rounds() -> None:
+    revs = [FakeReviewer("m1"), FakeReviewer("m2")]
+    phases: list[str] = []
+
+    out = run_council(
+        revs,
+        DiffOnlyContext(diff="d"),
+        timeout=5.0,
+        progress=phases.append,
+    )
+
+    assert set(out.r1) == {"A", "B"}
+    assert set(out.r2) == {"A", "B"}
+    assert phases == ["r1", "r2"]
+
+
+def test_progress_skips_r2_when_council_collapses() -> None:
+    revs = [
+        FakeReviewer("m1", fail_on={"senior software engineer"}),
+        FakeReviewer("m2", fail_on={"senior software engineer"}),
+    ]
+    phases: list[str] = []
+
+    out = run_council(
+        revs,
+        DiffOnlyContext(diff="d"),
+        timeout=5.0,
+        progress=phases.append,
+    )
+
+    assert out.r1 == {}
+    assert out.r2 == {}
+    assert phases == ["r1"]
+
+
+def test_progress_callback_failures_do_not_abort_council() -> None:
+    revs = [FakeReviewer("m1"), FakeReviewer("m2")]
+    phases: list[str] = []
+
+    def fail_progress(phase: str) -> None:
+        phases.append(phase)
+        raise RuntimeError("progress renderer failed")
+
+    out = run_council(
+        revs,
+        DiffOnlyContext(diff="d"),
+        timeout=5.0,
+        progress=fail_progress,
+    )
+
+    assert set(out.r1) == {"A", "B"}
+    assert set(out.r2) == {"A", "B"}
+    assert phases == ["r1", "r2"]

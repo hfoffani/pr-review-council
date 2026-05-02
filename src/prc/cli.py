@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import os
 import shlex
 import subprocess
@@ -8,11 +10,13 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from . import config as cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
-from .council import run_council
+from .council import CouncilPhase, run_council
 from .git_ops import GitError, capture_diff, current_branch
 from .reviewers import make_reviewer, resolve_reviewer
 
@@ -43,8 +47,8 @@ Options:
   --no-chair-on-council       Do not include chair as a council member.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
-  --timeout SECS              Per-call timeout, default 180.
-  -v, --verbose               Progress to stderr.
+  --timeout SECS              Per-model API call timeout in seconds, default 180.
+  -v, --verbose               Detailed progress to stderr.
 """
 
 
@@ -110,9 +114,15 @@ def review(
         int, typer.Option("--max-diff-bytes", help="Truncation cap (chars)")
     ] = 600_000,
     timeout: Annotated[
-        float, typer.Option("--timeout", help="Per-call timeout in seconds")
+        float,
+        typer.Option(
+            "--timeout", help="Per-model API call timeout in seconds"
+        ),
     ] = 180.0,
-    verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("-v", "--verbose", help="Detailed progress to stderr"),
+    ] = False,
 ) -> None:
     try:
         c = cfg.load(explicit=config_path)
@@ -200,9 +210,25 @@ def review(
         )
 
     ctx = DiffOnlyContext(diff=diff.diff)
-    outcome = run_council(
-        reviewers, ctx, timeout=timeout, verbose=verbose
-    )
+    final: str | None = None
+    chair_error: BaseException | None = None
+    with _review_progress(enabled=not verbose) as progress:
+        progress(PROGRESS_COUNCIL_START)
+        outcome = run_council(
+            reviewers,
+            ctx,
+            timeout=timeout,
+            verbose=verbose,
+            progress=_council_progress(progress),
+        )
+
+        if len(outcome.r1) >= 2:
+            progress(PROGRESS_CHAIR)
+            try:
+                final = synthesize(chair, outcome, ctx, timeout=timeout)
+            except Exception as e:
+                chair_error = e
+
     if len(outcome.r1) < 2:
         print(
             f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); "
@@ -213,10 +239,15 @@ def review(
             print(f"prc:   {letter}: {why}", file=sys.stderr)
         raise typer.Exit(3)
 
-    try:
-        final = synthesize(chair, outcome, ctx, timeout=timeout)
-    except Exception as e:
-        print(f"prc: chair failed: {e!r}", file=sys.stderr)
+    if chair_error is not None:
+        print(
+            f"prc: chair failed: {_format_exception(chair_error)}",
+            file=sys.stderr,
+        )
+        raise typer.Exit(2)
+
+    if final is None:
+        print("prc: chair failed: no verdict produced", file=sys.stderr)
         raise typer.Exit(2)
 
     if verbose:
@@ -314,6 +345,60 @@ def _print_subcommands() -> None:
     print("Commands:")
     for name, description in SUBCOMMANDS.items():
         print(f"  {name:<8} {description}")
+
+
+PROGRESS_COUNCIL_START = "prc: council starting..."
+PROGRESS_R1 = "prc: council reviewing diff..."
+PROGRESS_R2 = "prc: council reviewing reviewers..."
+PROGRESS_CHAIR = "prc: chair writing verdict..."
+
+
+@contextmanager
+def _review_progress(
+    *, enabled: bool
+) -> Iterator[Callable[[str], None]]:
+    def noop(_message: str) -> None:
+        return
+
+    if not enabled:
+        yield noop
+        return
+
+    console = Console(stderr=True)
+    if not console.is_terminal:
+        yield noop
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        console=console,
+        transient=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+    ) as progress:
+        task_id = progress.add_task(PROGRESS_COUNCIL_START, total=None)
+
+        def update(message: str) -> None:
+            progress.update(task_id, description=message)
+
+        yield update
+
+
+def _council_progress(
+    progress: Callable[[str], None]
+) -> Callable[[CouncilPhase], None]:
+    def update(phase: CouncilPhase) -> None:
+        if phase == "r1":
+            progress(PROGRESS_R1)
+        elif phase == "r2":
+            progress(PROGRESS_R2)
+
+    return update
+
+
+def _format_exception(error: BaseException) -> str:
+    return repr(error)
 
 
 def _print_config(
