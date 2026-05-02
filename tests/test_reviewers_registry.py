@@ -106,6 +106,26 @@ def test_missing_key_raises(fake_family) -> None:
         make_reviewer("x-1", providers, {})
 
 
+def test_strip_prefix_removes_routing_tag(fake_family) -> None:
+    providers = {
+        "openrouter": {
+            "family": "fake",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "${api_keys.openrouter}",
+            "match": ["openrouter/*"],
+            "strip_prefix": "openrouter/",
+        }
+    }
+    make_reviewer(
+        "openrouter/deepseek/deepseek-chat",
+        providers,
+        {"openrouter": "OR"},
+    )
+    [call] = fake_family.instances
+    assert call["model"] == "deepseek/deepseek-chat"
+    assert call["base_url"] == "https://openrouter.ai/api/v1"
+
+
 def test_unknown_family_raises(fake_family) -> None:
     providers = {
         "x": {

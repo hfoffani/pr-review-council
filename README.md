@@ -34,10 +34,11 @@ model = "claude-opus-4-7"
 on_council = false           # if true, chair also reviews R1 (review reused for R3)
 
 [api_keys]
-anthropic = "sk-ant-..."
-openai    = "sk-..."
-google    = "..."
-xai       = "xai-..."
+anthropic  = "sk-ant-..."
+openai     = "sk-..."
+google     = "..."
+xai        = "xai-..."
+openrouter = "sk-or-..."
 
 [providers.anthropic]
 family   = "anthropic"
@@ -60,11 +61,22 @@ family   = "openai-compatible"
 base_url = "https://api.x.ai/v1"
 api_key  = "${api_keys.xai}"
 match    = ["grok-*"]
+
+# Aggregator: "openrouter/<vendor>/<model>" → OpenRouter. The "openrouter/"
+# prefix is stripped before the API call.
+[providers.openrouter]
+family       = "openai-compatible"
+base_url     = "https://openrouter.ai/api/v1"
+api_key      = "${api_keys.openrouter}"
+match        = ["openrouter/*"]
+strip_prefix = "openrouter/"
 ```
 
-### Adding a new OpenAI-compatible provider — zero code
+To put an OpenRouter model on the council, add e.g. `"openrouter/deepseek/deepseek-chat"` to `[council].models`.
 
-Append a `[providers.<name>]` block; that's it. Example for DeepSeek:
+### Adding a new direct provider — zero code
+
+Append a `[providers.<name>]` block; that's it. Example for DeepSeek's own API:
 
 ```toml
 [providers.deepseek]
@@ -75,6 +87,8 @@ match    = ["deepseek-*"]
 ```
 
 Then add `deepseek-v3` (or whichever id) to `[council].models`.
+
+`strip_prefix` (optional) lets a single provider front many models behind a routing tag — see the OpenRouter block above. Useful for any aggregator API where the natural model id is `vendor/model` and you want `<provider>/vendor/model` in the council list for clarity.
 
 ### Env vars override config
 

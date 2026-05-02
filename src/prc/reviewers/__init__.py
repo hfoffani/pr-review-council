@@ -76,7 +76,11 @@ def make_reviewer(
                     f"no api_key resolved for provider {prov_name!r} "
                     f"(model={model}); set env var or fill config"
                 )
-            kwargs: dict[str, Any] = {"model": model, "api_key": api_key}
+            api_model = model
+            prefix = prov.get("strip_prefix")
+            if prefix and api_model.startswith(prefix):
+                api_model = api_model[len(prefix):]
+            kwargs: dict[str, Any] = {"model": api_model, "api_key": api_key}
             if "base_url" in prov:
                 kwargs["base_url"] = _interp(prov["base_url"], scope)
             return _FAMILIES[family](**kwargs)

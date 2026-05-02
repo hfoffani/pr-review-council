@@ -18,10 +18,11 @@ model = "claude-opus-4-7"
 on_council = false
 
 [api_keys]
-anthropic = ""
-openai    = ""
-google    = ""
-xai       = ""
+anthropic  = ""
+openai     = ""
+google     = ""
+xai        = ""
+openrouter = ""
 
 [providers.anthropic]
 family   = "anthropic"
@@ -44,6 +45,16 @@ family   = "openai-compatible"
 base_url = "https://api.x.ai/v1"
 api_key  = "${api_keys.xai}"
 match    = ["grok-*"]
+
+# Aggregator: route any "openrouter/<vendor>/<model>" id through OpenRouter.
+# The "openrouter/" prefix is stripped before the API call.
+# Example council entry: "openrouter/deepseek/deepseek-chat"
+[providers.openrouter]
+family       = "openai-compatible"
+base_url     = "https://openrouter.ai/api/v1"
+api_key      = "${api_keys.openrouter}"
+match        = ["openrouter/*"]
+strip_prefix = "openrouter/"
 """
 
 
