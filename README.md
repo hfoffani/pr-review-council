@@ -9,6 +9,17 @@ sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent rev
 has them critique each other, then a configurable Chairman LLM synthesizes
 the council's reviews into a final markdown PR review printed to stdout.
 
+## Usage
+
+```bash
+cd repo
+git checkout my-new-feature
+prd review
+```
+
+![Output](images/pr-council.gif)
+
+
 ## How it works
 
 1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
