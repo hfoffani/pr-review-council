@@ -48,7 +48,7 @@ def test_cli_empty_diff_exits_zero(
         ),
     )
 
-    res = runner.invoke(cli.app, [str(tmp_path), "feature"])
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
 
     assert res.exit_code == 0
     assert "no changes" in res.stderr
@@ -64,7 +64,7 @@ def test_cli_git_error_maps_to_exit_4(
 
     monkeypatch.setattr(cli, "capture_diff", fail)
 
-    res = runner.invoke(cli.app, [str(tmp_path), "feature"])
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
 
     assert res.exit_code == 4
     assert "bad diff" in res.stderr
@@ -77,7 +77,7 @@ def test_cli_config_error_maps_to_exit_5(tmp_path: Path, monkeypatch) -> None:
         lambda explicit=None: (_ for _ in ()).throw(ValueError("bad config")),
     )
 
-    res = runner.invoke(cli.app, [str(tmp_path), "feature"])
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
 
     assert res.exit_code == 5
     assert "config error" in res.stderr
@@ -130,14 +130,23 @@ def test_cli_happy_path_prints_final_review(
     monkeypatch.setattr(cli, "run_council", run_council)
     monkeypatch.setattr(cli, "synthesize", synthesize)
 
-    res = runner.invoke(cli.app, [str(tmp_path), "feature"])
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
 
     assert res.exit_code == 0
     assert res.stdout == "final review\n"
     assert made == ["chair-model", "model-a", "model-b"]
 
 
-def test_cli_defaults_to_current_repo_and_branch(monkeypatch) -> None:
+def test_cli_without_subcommand_lists_commands() -> None:
+    res = runner.invoke(cli.app, [])
+
+    assert res.exit_code == 0
+    assert "review" in res.stdout
+    assert "config" in res.stdout
+    assert "help" in res.stdout
+
+
+def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.setattr(cli, "current_branch", lambda repo: "current-branch")
     seen: dict[str, object] = {}
@@ -170,14 +179,14 @@ def test_cli_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     )
     monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "final")
 
-    res = runner.invoke(cli.app, [])
+    res = runner.invoke(cli.app, ["review"])
 
     assert res.exit_code == 0
     assert seen["repo"] == Path(".").resolve()
     assert seen["branch"] == "current-branch"
 
 
-def test_cli_print_config_resolves_active_members(monkeypatch) -> None:
+def test_config_resolves_active_members(monkeypatch) -> None:
     from prc.reviewers import _registry
 
     saved = dict(_registry._FAMILIES)
@@ -185,7 +194,7 @@ def test_cli_print_config_resolves_active_members(monkeypatch) -> None:
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
 
     try:
-        res = runner.invoke(cli.app, ["--print-config"])
+        res = runner.invoke(cli.app, ["config"])
     finally:
         _registry._FAMILIES.clear()
         _registry._FAMILIES.update(saved)
@@ -199,7 +208,7 @@ def test_cli_print_config_resolves_active_members(monkeypatch) -> None:
     assert "no network request was made" in res.stdout
 
 
-def test_cli_print_config_reports_env_key_source(monkeypatch) -> None:
+def test_config_reports_env_key_source(monkeypatch) -> None:
     from prc.reviewers import _registry
 
     config = _config()
@@ -217,7 +226,7 @@ def test_cli_print_config_reports_env_key_source(monkeypatch) -> None:
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: config)
 
     try:
-        res = runner.invoke(cli.app, ["--print-config"])
+        res = runner.invoke(cli.app, ["config"])
     finally:
         _registry._FAMILIES.clear()
         _registry._FAMILIES.update(saved)
@@ -226,7 +235,7 @@ def test_cli_print_config_reports_env_key_source(monkeypatch) -> None:
     assert "api_key: set (env:ANTHROPIC_API_KEY)" in res.stdout
 
 
-def test_cli_edit_config_uses_editor(monkeypatch) -> None:
+def test_config_edit_uses_editor(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.setenv("EDITOR", "editor --wait")
@@ -236,17 +245,35 @@ def test_cli_edit_config_uses_editor(monkeypatch) -> None:
         lambda cmd, check: calls.append(cmd),
     )
 
-    res = runner.invoke(cli.app, ["--edit-config"])
+    res = runner.invoke(cli.app, ["config", "--edit"])
 
     assert res.exit_code == 0
     assert calls == [["editor", "--wait", "/tmp/prc.toml"]]
 
 
-def test_cli_edit_config_requires_editor(monkeypatch) -> None:
+def test_config_edit_requires_editor(monkeypatch) -> None:
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.delenv("EDITOR", raising=False)
 
-    res = runner.invoke(cli.app, ["--edit-config"])
+    res = runner.invoke(cli.app, ["config", "--edit"])
 
     assert res.exit_code == 5
     assert "EDITOR is not set" in res.stderr
+
+
+def test_help_review_shows_options() -> None:
+    res = runner.invoke(cli.app, ["help", "review"])
+
+    assert res.exit_code == 0
+    assert "Usage: prc review" in res.stdout
+    assert "--base BASE" in res.stdout
+    assert "--timeout SECS" in res.stdout
+
+
+def test_help_config_shows_options() -> None:
+    res = runner.invoke(cli.app, ["help", "config"])
+
+    assert res.exit_code == 0
+    assert "Usage: prc config" in res.stdout
+    assert "--edit" in res.stdout
+    assert "--config PATH" in res.stdout

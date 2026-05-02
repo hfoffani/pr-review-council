@@ -16,11 +16,65 @@ from .council import run_council
 from .git_ops import GitError, capture_diff, current_branch
 from .reviewers import make_reviewer, resolve_reviewer
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(
+    add_completion=False,
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
 
-@app.command()
-def main(
+SUBCOMMANDS = {
+    "review": "Review the current repo/branch with the configured council.",
+    "config": "Show configuration, provider routing, and API-key presence.",
+    "help": "Show help for a subcommand.",
+}
+
+
+REVIEW_HELP = """\
+Usage: prc review [repo] [branch] [OPTIONS]
+
+Review a local git branch with the configured LLM council.
+
+Options:
+  --base BASE                 Override auto-detected base ref.
+  --council MODEL[,MODEL...]  Override config council.
+  --chairman MODEL            Override config chair.
+  --chair-on-council          Include chair as a council member.
+  --no-chair-on-council       Do not include chair as a council member.
+  --config PATH               Explicit config file.
+  --max-diff-bytes N          Truncation cap, default 600000.
+  --timeout SECS              Per-call timeout, default 180.
+  -v, --verbose               Progress to stderr.
+"""
+
+
+CONFIG_HELP = """\
+Usage: prc config [OPTIONS]
+
+Show active chair/council configuration and provider/API-key resolution.
+
+Options:
+  --edit                      Open the selected config file in $EDITOR.
+  --config PATH               Explicit config file.
+  --council MODEL[,MODEL...]  Override config council for display.
+  --chairman MODEL            Override config chair for display.
+  --chair-on-council          Include chair in displayed council.
+  --no-chair-on-council       Do not include chair in displayed council.
+"""
+
+
+@app.callback()
+def root(
+    ctx: typer.Context,
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    _print_subcommands()
+    raise typer.Exit(0)
+
+
+@app.command("review", help=SUBCOMMANDS["review"])
+def review(
     repo: Annotated[
         Path,
         typer.Argument(help="Path to local git repo"),
@@ -52,20 +106,6 @@ def main(
     config_path: Annotated[
         Optional[Path], typer.Option("--config", help="Explicit config path")
     ] = None,
-    print_config: Annotated[
-        bool,
-        typer.Option(
-            "--print-config",
-            help="Print active chair/council provider resolution and exit",
-        ),
-    ] = False,
-    edit_config: Annotated[
-        bool,
-        typer.Option(
-            "--edit-config",
-            help="Open the selected config file in $EDITOR and exit",
-        ),
-    ] = False,
     max_diff_bytes: Annotated[
         int, typer.Option("--max-diff-bytes", help="Truncation cap (chars)")
     ] = 600_000,
@@ -77,9 +117,6 @@ def main(
     try:
         c = cfg.load(explicit=config_path)
     except cfg.ConfigMissing as e:
-        if edit_config:
-            _edit_config(e.created_at)
-            raise typer.Exit(0)
         print(
             f"prc: created default config at {e.created_at}",
             file=sys.stderr,
@@ -92,10 +129,6 @@ def main(
         print(f"prc: config error: {e}", file=sys.stderr)
         raise typer.Exit(5)
 
-    if edit_config:
-        _edit_config(c.source)
-        raise typer.Exit(0)
-
     council_models = (
         [m.strip() for m in council.split(",") if m.strip()]
         if council
@@ -103,14 +136,6 @@ def main(
     )
     chair_model = chairman or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
-
-    if print_config:
-        try:
-            _print_config(c, council_models, chair_model, on_council_flag)
-        except (ValueError, RuntimeError) as e:
-            print(f"prc: {e}", file=sys.stderr)
-            raise typer.Exit(5)
-        raise typer.Exit(0)
 
     repo = repo.resolve()
     if branch is None:
@@ -197,6 +222,98 @@ def main(
     if verbose:
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
     print(final)
+
+
+@app.command("config", help=SUBCOMMANDS["config"])
+def config_command(
+    config_path: Annotated[
+        Optional[Path], typer.Option("--config", help="Explicit config path")
+    ] = None,
+    edit: Annotated[
+        bool,
+        typer.Option("--edit", help="Open the selected config file in $EDITOR"),
+    ] = False,
+    council: Annotated[
+        Optional[str],
+        typer.Option(
+            "--council", help="Comma-separated council models (overrides config)"
+        ),
+    ] = None,
+    chairman: Annotated[
+        Optional[str],
+        typer.Option("--chairman", help="Chair model (overrides config)"),
+    ] = None,
+    chair_on_council: Annotated[
+        bool,
+        typer.Option(
+            "--chair-on-council/--no-chair-on-council",
+            help="Include chair as a council member",
+        ),
+    ] = False,
+) -> None:
+    try:
+        c = cfg.load(explicit=config_path)
+    except cfg.ConfigMissing as e:
+        if edit:
+            _edit_config(e.created_at)
+            raise typer.Exit(0)
+        print(
+            f"prc: created default config at {e.created_at}",
+            file=sys.stderr,
+        )
+        print(
+            "prc: edit it to add API keys, then rerun", file=sys.stderr
+        )
+        raise typer.Exit(5)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"prc: config error: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
+    if edit:
+        _edit_config(c.source)
+        raise typer.Exit(0)
+
+    council_models = (
+        [m.strip() for m in council.split(",") if m.strip()]
+        if council
+        else list(c.council)
+    )
+    chair_model = chairman or c.chair_model
+    on_council_flag = chair_on_council or c.chair_on_council
+    try:
+        _print_config(c, council_models, chair_model, on_council_flag)
+    except (ValueError, RuntimeError) as e:
+        print(f"prc: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
+
+@app.command("help", help=SUBCOMMANDS["help"])
+def help_command(
+    topic: Annotated[
+        Optional[str],
+        typer.Argument(help="Subcommand to show help for"),
+    ] = None,
+) -> None:
+    if topic is None:
+        _print_subcommands()
+        return
+    if topic == "review":
+        print(REVIEW_HELP)
+        return
+    if topic == "config":
+        print(CONFIG_HELP)
+        return
+    if topic == "help":
+        print("Usage: prc help [review|config]\n\nShow help for a subcommand.")
+        return
+    print(f"prc: unknown help topic {topic!r}", file=sys.stderr)
+    raise typer.Exit(2)
+
+
+def _print_subcommands() -> None:
+    print("Commands:")
+    for name, description in SUBCOMMANDS.items():
+        print(f"  {name:<8} {description}")
 
 
 def _print_config(

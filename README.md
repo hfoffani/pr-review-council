@@ -101,32 +101,44 @@ API keys live in this file. The included `.gitignore` excludes `prc.toml` and `.
 ## Run
 
 ```bash
-uv run prc /path/to/repo my-feature-branch -v
+uv run prc review /path/to/repo my-feature-branch -v
 ```
 
-With no positional arguments, `prc` uses the current directory and current
-git branch.
+With no positional arguments, `prc review` uses the current directory and
+current git branch.
 
 CLI:
 
 ```
-prc [repo] [branch]
+prc
+    review      Review the current repo/branch with the configured council.
+    config      Show configuration, provider routing, and API-key presence.
+    help        Show help for a subcommand.
+
+prc review [repo] [branch]
     [--base BASE]                       # override auto-detected base
     [--council MODEL[,MODEL...]]        # override config council
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
     [--config PATH]                     # explicit config file
-    [--print-config]                    # show active chair/council routing
-    [--edit-config]                     # open config in $EDITOR
     [--max-diff-bytes N]                # truncation cap, default 600000
     [--timeout SECS]                    # per-call, default 180
     [-v]                                # progress to stderr
+
+prc config
+    [--edit]                            # open config in $EDITOR
+    [--config PATH]                     # explicit config file
+    [--council MODEL[,MODEL...]]        # override displayed council
+    [--chairman MODEL]                  # override displayed chair
+    [--chair-on-council]                # include chair in displayed council
+
+prc help review
+prc help config
 ```
 
-`--print-config` checks that every active chair/council model matches a
-provider and has an API key resolved from config or env vars. It does not make
-network calls or validate the key with the provider, so it does not consume LLM
-tokens.
+`prc config` checks that every active chair/council model matches a provider
+and has an API key resolved from config or env vars. It does not make network
+calls or validate the key with the provider, so it does not consume LLM tokens.
 
 Exit codes: `0` ok · `2` chair failed · `3` council collapsed (<2 R1 survivors) · `4` git/diff error · `5` config or missing API key.
 
