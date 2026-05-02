@@ -115,6 +115,12 @@ def capture_diff(
         )
         sz = len(per_file.encode("utf-8"))
         if used + sz > max_bytes:
+            if not included:
+                raise GitError(
+                    f"first changed file {p!r} is {sz} bytes, which exceeds "
+                    f"the diff cap of {max_bytes}; raise --max-diff-bytes, "
+                    "filter generated files, or split this branch."
+                )
             break
         chunks.append(per_file)
         included.append(p)

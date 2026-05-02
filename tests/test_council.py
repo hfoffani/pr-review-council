@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from prc.context import DiffOnlyContext
 from prc.council import run_council
 from prc.reviewers.base import Reviewer
@@ -53,7 +51,7 @@ def test_partial_failure_drops_member_from_r2() -> None:
         r2_user = rev.calls[1][1]
         other = "C" if letter == "A" else "A"
         assert f"### Reviewer {other}" in r2_user
-        assert f"### Reviewer B" not in r2_user
+        assert "### Reviewer B" not in r2_user
 
 
 def test_council_collapse_returns_early() -> None:

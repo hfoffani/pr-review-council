@@ -97,6 +97,22 @@ def test_truncation(tmp_path: Path) -> None:
     assert "TRUNCATED:" in res.diff
 
 
+def test_truncation_errors_when_first_file_exceeds_cap(tmp_path: Path) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "seed").write_text("s")
+    _git(repo, "add", "seed")
+    _git(repo, "commit", "-m", "i")
+    _git(repo, "checkout", "-b", "f")
+    (repo / "large.txt").write_text("line\n" * 1_200)
+    (repo / "small.txt").write_text("ok\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "mixed")
+    with pytest.raises(git_ops.GitError, match="first changed file"):
+        git_ops.capture_diff(repo, "f", "main", max_bytes=5_000)
+
+
 def test_oversize_hard_error(tmp_path: Path) -> None:
     repo = tmp_path / "r"
     repo.mkdir()

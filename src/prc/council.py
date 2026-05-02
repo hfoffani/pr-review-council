@@ -85,7 +85,7 @@ def run_council(
         return out  # caller decides whether to abort
 
     # Round 2 — cross-evaluation among survivors
-    survivors = [(l, by_letter[l]) for l in out.r1]
+    survivors = [(letter, by_letter[letter]) for letter in out.r1]
     with ThreadPoolExecutor(max_workers=len(survivors)) as ex:
         futs2 = {}
         for letter, rev in survivors:
