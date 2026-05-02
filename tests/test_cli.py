@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -111,9 +113,10 @@ def test_cli_happy_path_prints_final_review(
         made.append(model)
         return FakeReviewer(model)
 
-    def run_council(reviewers, ctx, timeout, verbose):
+    def run_council(reviewers, ctx, timeout, verbose, progress):
         assert [r.model for r in reviewers] == ["model-a", "model-b"]
         assert ctx.render() == "<diff>\ndiff body\n</diff>"
+        assert progress is not None
         return CouncilOutcome(
             r1={
                 "A": ("model-a", "review a"),
@@ -135,6 +138,155 @@ def test_cli_happy_path_prints_final_review(
     assert res.exit_code == 0
     assert res.stdout == "final review\n"
     assert made == ["chair-model", "model-a", "model-b"]
+
+
+def test_cli_progress_wraps_llm_work(
+    tmp_path: Path, monkeypatch
+) -> None:
+    events: list[str] = []
+
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    @contextmanager
+    def fake_progress(*, enabled: bool) -> Iterator[Callable[[str], None]]:
+        assert enabled is True
+        events.append("open")
+
+        def update(message: str) -> None:
+            events.append(message)
+
+        try:
+            yield update
+        finally:
+            events.append("closed")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "_review_progress", fake_progress)
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress: (
+            progress("r1"),
+            progress("r2"),
+            CouncilOutcome(
+                r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+            ),
+        )[-1],
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "final")
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 0
+    assert res.stdout == "final\n"
+    assert events == [
+        "open",
+        cli.PROGRESS_COUNCIL_START,
+        cli.PROGRESS_R1,
+        cli.PROGRESS_R2,
+        cli.PROGRESS_CHAIR,
+        "closed",
+    ]
+
+
+def test_cli_progress_closes_before_council_collapse(
+    tmp_path: Path, monkeypatch
+) -> None:
+    events: list[str] = []
+
+    @contextmanager
+    def fake_progress(*, enabled: bool) -> Iterator[Callable[[str], None]]:
+        assert enabled is True
+        events.append("open")
+
+        def update(message: str) -> None:
+            events.append(message)
+
+        try:
+            yield update
+        finally:
+            events.append("closed")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "_review_progress", fake_progress)
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress: (
+            progress("r1"),
+            CouncilOutcome(r1={"A": ("model-a", "a")}),
+        )[-1],
+    )
+    monkeypatch.setattr(
+        cli,
+        "synthesize",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("chair should not run")
+        ),
+    )
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 3
+    assert "council collapsed" in res.stderr
+    assert events == ["open", cli.PROGRESS_COUNCIL_START, cli.PROGRESS_R1, "closed"]
+
+
+def test_review_progress_disabled_when_stderr_is_not_terminal(
+    monkeypatch,
+) -> None:
+    class FakeConsole:
+        is_terminal = False
+
+        def __init__(self, *, stderr: bool) -> None:
+            assert stderr is True
+
+    def fail_progress(*args, **kwargs):
+        raise AssertionError("progress renderer should not start")
+
+    monkeypatch.setattr(cli, "Console", FakeConsole)
+    monkeypatch.setattr(cli, "Progress", fail_progress)
+
+    with cli._review_progress(enabled=True) as progress:
+        progress("ignored")
 
 
 def test_cli_without_subcommand_lists_commands() -> None:
@@ -173,7 +325,7 @@ def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "run_council",
-        lambda reviewers, ctx, timeout, verbose: CouncilOutcome(
+        lambda reviewers, ctx, timeout, verbose, progress: CouncilOutcome(
             r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
         ),
     )
