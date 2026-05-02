@@ -345,6 +345,10 @@ def _print_subcommands() -> None:
     print("Commands:")
     for name, description in SUBCOMMANDS.items():
         print(f"  {name:<8} {description}")
+    print()
+    print("Installed with uv?")
+    print("  Upgrade:   uv tool upgrade pr-review-council")
+    print("  Uninstall: uv tool uninstall pr-review-council")
 
 
 PROGRESS_COUNCIL_START = "prc: council starting..."

@@ -296,6 +296,8 @@ def test_cli_without_subcommand_lists_commands() -> None:
     assert "review" in res.stdout
     assert "config" in res.stdout
     assert "help" in res.stdout
+    assert "uv tool upgrade pr-review-council" in res.stdout
+    assert "uv tool uninstall pr-review-council" in res.stdout
 
 
 def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
