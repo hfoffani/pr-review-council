@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated, Optional
@@ -10,16 +13,22 @@ from . import config as cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
 from .council import run_council
-from .git_ops import GitError, capture_diff
-from .reviewers import make_reviewer
+from .git_ops import GitError, capture_diff, current_branch
+from .reviewers import make_reviewer, resolve_reviewer
 
 app = typer.Typer(add_completion=False)
 
 
 @app.command()
 def main(
-    repo: Annotated[Path, typer.Argument(help="Path to local git repo")],
-    branch: Annotated[str, typer.Argument(help="Branch to review")],
+    repo: Annotated[
+        Path,
+        typer.Argument(help="Path to local git repo"),
+    ] = Path("."),
+    branch: Annotated[
+        Optional[str],
+        typer.Argument(help="Branch to review; defaults to current branch"),
+    ] = None,
     base: Annotated[
         Optional[str], typer.Option("--base", help="Override auto-detected base ref")
     ] = None,
@@ -43,6 +52,20 @@ def main(
     config_path: Annotated[
         Optional[Path], typer.Option("--config", help="Explicit config path")
     ] = None,
+    print_config: Annotated[
+        bool,
+        typer.Option(
+            "--print-config",
+            help="Print active chair/council provider resolution and exit",
+        ),
+    ] = False,
+    edit_config: Annotated[
+        bool,
+        typer.Option(
+            "--edit-config",
+            help="Open the selected config file in $EDITOR and exit",
+        ),
+    ] = False,
     max_diff_bytes: Annotated[
         int, typer.Option("--max-diff-bytes", help="Truncation cap (chars)")
     ] = 600_000,
@@ -54,6 +77,9 @@ def main(
     try:
         c = cfg.load(explicit=config_path)
     except cfg.ConfigMissing as e:
+        if edit_config:
+            _edit_config(e.created_at)
+            raise typer.Exit(0)
         print(
             f"prc: created default config at {e.created_at}",
             file=sys.stderr,
@@ -66,6 +92,10 @@ def main(
         print(f"prc: config error: {e}", file=sys.stderr)
         raise typer.Exit(5)
 
+    if edit_config:
+        _edit_config(c.source)
+        raise typer.Exit(0)
+
     council_models = (
         [m.strip() for m in council.split(",") if m.strip()]
         if council
@@ -73,6 +103,22 @@ def main(
     )
     chair_model = chairman or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
+
+    if print_config:
+        try:
+            _print_config(c, council_models, chair_model, on_council_flag)
+        except (ValueError, RuntimeError) as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(5)
+        raise typer.Exit(0)
+
+    repo = repo.resolve()
+    if branch is None:
+        try:
+            branch = current_branch(repo)
+        except GitError as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(4)
 
     try:
         diff = capture_diff(
@@ -151,3 +197,55 @@ def main(
     if verbose:
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
     print(final)
+
+
+def _print_config(
+    c: cfg.Config,
+    council_models: list[str],
+    chair_model: str,
+    chair_on_council: bool,
+) -> None:
+    print(f"config: {c.source}")
+    print(f"chair: {chair_model}")
+    _print_resolution(chair_model, c, role="chair")
+    print("council:")
+    active = list(council_models)
+    if chair_on_council and chair_model not in active:
+        active.append(chair_model)
+    for idx, model in enumerate(active, start=1):
+        role = "council"
+        if chair_on_council and model == chair_model:
+            role = "chair+council"
+        print(f"  {idx}. {model}")
+        _print_resolution(model, c, role=role, indent="     ")
+    print(
+        "api-key validation: resolved provider/key presence only; no network "
+        "request was made."
+    )
+
+
+def _print_resolution(
+    model: str,
+    c: cfg.Config,
+    *,
+    role: str,
+    indent: str = "  ",
+) -> None:
+    resolved = resolve_reviewer(model, c.providers, c.api_keys)
+    print(
+        f"{indent}{role}: provider={resolved.provider} "
+        f"family={resolved.family} api_model={resolved.api_model}"
+    )
+    print(f"{indent}api_key: set ({resolved.api_key_source})")
+
+
+def _edit_config(path: Path) -> None:
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        print("prc: EDITOR is not set", file=sys.stderr)
+        raise typer.Exit(5)
+    try:
+        subprocess.run([*shlex.split(editor), str(path)], check=True)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"prc: editor failed: {e}", file=sys.stderr)
+        raise typer.Exit(5)

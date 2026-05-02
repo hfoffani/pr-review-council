@@ -52,6 +52,15 @@ def detect_base(repo: Path, branch: str) -> str:
     )
 
 
+def current_branch(repo: Path) -> str:
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo).strip()
+    if not branch or branch == "HEAD":
+        raise GitError(
+            f"{repo} is in detached HEAD state; pass the branch explicitly"
+        )
+    return branch
+
+
 def capture_diff(
     repo: Path,
     branch: str,

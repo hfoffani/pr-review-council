@@ -60,6 +60,11 @@ def test_detect_base_prefers_master_if_main_absent(tmp_path: Path) -> None:
     assert git_ops.detect_base(repo, "feat") == "master"
 
 
+def test_current_branch(repo_with_branch) -> None:
+    repo, _, branch = repo_with_branch
+    assert git_ops.current_branch(repo) == branch
+
+
 def test_capture_diff_three_dot(repo_with_branch) -> None:
     repo, base, branch = repo_with_branch
     res = git_ops.capture_diff(repo, branch)
