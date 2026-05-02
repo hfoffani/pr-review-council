@@ -33,7 +33,7 @@ match    = ["claude-*"]
 family   = "openai-compatible"
 base_url = "https://api.openai.com/v1"
 api_key  = "${api_keys.openai}"
-match    = ["gpt-*", "o*"]
+match    = ["gpt-*", "o[0-9]*"]
 
 [providers.google]
 family   = "google"

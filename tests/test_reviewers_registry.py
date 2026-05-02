@@ -106,6 +106,32 @@ def test_missing_key_raises(fake_family) -> None:
         make_reviewer("x-1", providers, {})
 
 
+def test_openai_glob_does_not_swallow_openrouter(fake_family) -> None:
+    """o[0-9]* matches o1/o3/o4-mini but not openrouter/..."""
+    providers = {
+        "openai": {
+            "family": "fake",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "${api_keys.openai}",
+            "match": ["gpt-*", "o[0-9]*"],
+        },
+        "openrouter": {
+            "family": "fake",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "${api_keys.openrouter}",
+            "match": ["openrouter/*"],
+            "strip_prefix": "openrouter/",
+        },
+    }
+    api_keys = {"openai": "OAI", "openrouter": "OR"}
+    make_reviewer("o3-mini", providers, api_keys)
+    assert fake_family.instances[-1]["base_url"].startswith("https://api.openai.com")
+    make_reviewer("openrouter/deepseek/deepseek-chat", providers, api_keys)
+    last = fake_family.instances[-1]
+    assert last["base_url"].startswith("https://openrouter.ai")
+    assert last["model"] == "deepseek/deepseek-chat"
+
+
 def test_strip_prefix_removes_routing_tag(fake_family) -> None:
     providers = {
         "openrouter": {
