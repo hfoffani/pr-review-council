@@ -4,6 +4,17 @@ version = "0.1.0"
 description = "Multi-LLM council code review for local git branches"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["cli", "code-review", "llm", "pull-request", "git"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "anthropic>=0.40",
     "openai>=1.50",
@@ -14,6 +25,11 @@ dependencies = [
 
 [project.scripts]
 prc = "prc.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/hfoffani/pr-review-council"
+Repository = "https://github.com/hfoffani/pr-review-council"
+Issues = "https://github.com/hfoffani/pr-review-council/issues"
 
 [dependency-groups]
 dev = [

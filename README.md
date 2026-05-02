@@ -6,13 +6,62 @@ Multi-LLM council code review for local git branches.
 
 ## Install
 
+Install with `uv`:
+
 ```bash
-git clone <repo>
-cd pr-review-council
-uv sync
+uv tool install git+https://github.com/hfoffani/pr-review-council.git
 ```
 
-The `prc` console script is installed into the project's `.venv`. Run via `uv run prc ...` or activate the venv.
+`uv` 0.1.28 or newer is required. Install `uv` from the
+[official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+One-line installer from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | bash
+```
+
+The installer uses `uv tool install` to install the `prc` command into an
+isolated Python environment. It asks for confirmation before installing.
+
+Inspect the installer before running it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh
+```
+
+Upgrade from GitHub:
+
+```bash
+uv tool upgrade pr-review-council
+```
+
+Uninstall:
+
+```bash
+uv tool uninstall pr-review-council
+```
+
+Installer options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_INSTALL_REF=v0.1.0 bash
+curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_REPO_URL=https://github.com/example/pr-review-council.git bash
+curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_YES=1 bash
+```
+
+`PRC_INSTALL_REF` installs a specific branch, tag, or commit. `PRC_REPO_URL`
+installs from a fork. `PRC_YES=1` skips the confirmation prompt for automated
+setup.
+
+Troubleshooting:
+
+- If `uv` is missing or too old, install or update it from the official `uv`
+  installation guide.
+- If installation succeeds but `prc` is not found, run `uv tool update-shell`
+  and open a new terminal.
+- If an existing install behaves strangely, rerun the installer or use
+  `uv tool upgrade pr-review-council`.
 
 ## Configure
 
