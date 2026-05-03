@@ -44,3 +44,29 @@ def test_create_default_prompts_does_not_overwrite_existing_file(
 
     assert created == path
     assert path.read_text() == "# mine\n"
+
+
+def test_default_prompts_path_respects_xdg_config_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    assert (
+        prompts.default_prompts_path()
+        == config_home / "pr-review-council/prompts.toml"
+    )
+
+
+def test_create_default_prompts_uses_xdg_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_home = tmp_path / "xdg"
+    expected = config_home / "pr-review-council/prompts.toml"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    created = prompts.create_default_prompts()
+
+    assert created == expected
+    assert expected.exists()
+    assert "[reviewer]" in expected.read_text()

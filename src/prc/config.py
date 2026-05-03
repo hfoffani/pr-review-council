@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
-DEFAULT_CONFIG_PATH = (
-    Path.home() / ".local" / "pr-review-council" / "config.toml"
-)
+APP_CONFIG_DIR = "pr-review-council"
+
+
+def default_config_dir() -> Path:
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home).expanduser() / APP_CONFIG_DIR
+    return Path.home() / ".config" / APP_CONFIG_DIR
+
+
+def default_config_path() -> Path:
+    return default_config_dir() / "config.toml"
+
+
+DEFAULT_CONFIG_PATH = default_config_path()
 
 DEFAULT_TEMPLATE = """\
 [council]
@@ -87,14 +100,15 @@ def find_config(
     local = cwd / "prc.toml"
     if local.exists():
         return local
-    if DEFAULT_CONFIG_PATH.exists():
-        return DEFAULT_CONFIG_PATH
+    default = default_config_path()
+    if default.exists():
+        return default
     return None
 
 
 def create_default_config(path: Path | None = None) -> Path:
     if path is None:
-        path = DEFAULT_CONFIG_PATH
+        path = default_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(DEFAULT_TEMPLATE)
     return path
