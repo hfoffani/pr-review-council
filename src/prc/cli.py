@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from . import config as cfg
+from . import prompts as prompt_cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
 from .council import CouncilOutcome, CouncilPhase, run_council
@@ -60,6 +61,7 @@ Show active chair/council configuration and provider/API-key resolution.
 
 Options:
   --edit                      Open the selected config file in $EDITOR.
+  --edit-prompts              Create/open custom prompt overrides in $EDITOR.
   --config PATH               Explicit config file.
   --council MODEL[,MODEL...]  Override config council for display.
   --chairman MODEL            Override config chair for display.
@@ -217,6 +219,12 @@ def review(
             file=sys.stderr,
         )
 
+    try:
+        prompts = prompt_cfg.load_prompts()
+    except ValueError as e:
+        print(f"prc: config error: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
     ctx = DiffOnlyContext(diff=diff.diff)
     final: str | None = None
     chair_error: BaseException | None = None
@@ -228,12 +236,15 @@ def review(
             timeout=timeout,
             verbose=verbose,
             progress=_council_progress(progress),
+            prompts=prompts,
         )
 
         if len(outcome.r1) >= 2:
             progress(PROGRESS_CHAIR)
             try:
-                final = synthesize(chair, outcome, ctx, timeout=timeout)
+                final = synthesize(
+                    chair, outcome, ctx, timeout=timeout, prompts=prompts
+                )
             except Exception as e:
                 chair_error = e
 
@@ -274,6 +285,13 @@ def config_command(
         bool,
         typer.Option("--edit", help="Open the selected config file in $EDITOR"),
     ] = False,
+    edit_prompts: Annotated[
+        bool,
+        typer.Option(
+            "--edit-prompts",
+            help="Create/open custom prompt overrides in $EDITOR",
+        ),
+    ] = False,
     council: Annotated[
         Optional[str],
         typer.Option(
@@ -292,6 +310,10 @@ def config_command(
         ),
     ] = False,
 ) -> None:
+    if edit_prompts:
+        _edit_config(prompt_cfg.create_default_prompts())
+        raise typer.Exit(0)
+
     try:
         c = cfg.load(explicit=config_path)
     except cfg.ConfigMissing as e:

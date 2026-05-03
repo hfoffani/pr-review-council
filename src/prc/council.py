@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import IO, Literal
 
 from .context import ContextProvider
-from .prompts import CROSS_EVAL_SYSTEM, REVIEWER_SYSTEM
+from .prompts import DEFAULT_PROMPTS, PromptSet
 from .reviewers import Reviewer
 
 
@@ -65,9 +65,11 @@ def run_council(
     verbose: bool = False,
     log_stream: IO[str] = sys.stderr,
     progress: ProgressCallback | None = None,
+    prompts: PromptSet | None = None,
 ) -> CouncilOutcome:
     if not reviewers:
         raise ValueError("council is empty")
+    prompt_set = prompts or DEFAULT_PROMPTS
     letters = [_letter(i) for i in range(len(reviewers))]
     by_letter = dict(zip(letters, reviewers))
     out = CouncilOutcome()
@@ -77,7 +79,7 @@ def run_council(
     user_r1 = context.render()
     with ThreadPoolExecutor(max_workers=len(reviewers)) as ex:
         futs = {
-            ex.submit(_try_chat, rev, REVIEWER_SYSTEM, user_r1, timeout): letter
+            ex.submit(_try_chat, rev, prompt_set.reviewer, user_r1, timeout): letter
             for letter, rev in zip(letters, reviewers)
         }
         for fut in as_completed(futs):
@@ -117,7 +119,7 @@ def run_council(
                 f"<peer-reviews>\n{peers_md}\n</peer-reviews>"
             )
             futs2[
-                ex.submit(_try_chat, rev, CROSS_EVAL_SYSTEM, user_r2, timeout)
+                ex.submit(_try_chat, rev, prompt_set.cross_eval, user_r2, timeout)
             ] = letter
         for fut in as_completed(futs2):
             letter = futs2[fut]
