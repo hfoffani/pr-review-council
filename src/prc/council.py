@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import IO
+from typing import IO, Literal
 
 from .context import ContextProvider
-from .prompts import CROSS_EVAL_SYSTEM, REVIEWER_SYSTEM
+from .prompts import DEFAULT_PROMPTS, PromptSet
 from .reviewers import Reviewer
 
 
@@ -28,6 +29,20 @@ def _letter(idx: int) -> str:
 
 
 _TRANSIENT = ("500", "502", "503", "504", "timeout", "Connection", "ECONN")
+CouncilPhase = Literal["r1", "r2"]
+ProgressCallback = Callable[[CouncilPhase], None]
+
+
+def _notify_progress(
+    progress: ProgressCallback | None, phase: CouncilPhase
+) -> None:
+    if progress is None:
+        return
+
+    try:
+        progress(phase)
+    except Exception:
+        return
 
 
 def _try_chat(
@@ -49,18 +64,22 @@ def run_council(
     timeout: float = 180.0,
     verbose: bool = False,
     log_stream: IO[str] = sys.stderr,
+    progress: ProgressCallback | None = None,
+    prompts: PromptSet | None = None,
 ) -> CouncilOutcome:
     if not reviewers:
         raise ValueError("council is empty")
+    prompt_set = prompts or DEFAULT_PROMPTS
     letters = [_letter(i) for i in range(len(reviewers))]
     by_letter = dict(zip(letters, reviewers))
     out = CouncilOutcome()
 
     # Round 1 — independent reviews
+    _notify_progress(progress, "r1")
     user_r1 = context.render()
     with ThreadPoolExecutor(max_workers=len(reviewers)) as ex:
         futs = {
-            ex.submit(_try_chat, rev, REVIEWER_SYSTEM, user_r1, timeout): letter
+            ex.submit(_try_chat, rev, prompt_set.reviewer, user_r1, timeout): letter
             for letter, rev in zip(letters, reviewers)
         }
         for fut in as_completed(futs):
@@ -85,6 +104,7 @@ def run_council(
         return out  # caller decides whether to abort
 
     # Round 2 — cross-evaluation among survivors
+    _notify_progress(progress, "r2")
     survivors = [(letter, by_letter[letter]) for letter in out.r1]
     with ThreadPoolExecutor(max_workers=len(survivors)) as ex:
         futs2 = {}
@@ -99,7 +119,7 @@ def run_council(
                 f"<peer-reviews>\n{peers_md}\n</peer-reviews>"
             )
             futs2[
-                ex.submit(_try_chat, rev, CROSS_EVAL_SYSTEM, user_r2, timeout)
+                ex.submit(_try_chat, rev, prompt_set.cross_eval, user_r2, timeout)
             ] = letter
         for fut in as_completed(futs2):
             letter = futs2[fut]

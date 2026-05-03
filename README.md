@@ -31,62 +31,45 @@ Models never see real identities of peers; the orchestrator holds the letter map
 
 ## Install
 
-Install with `uv`:
+Requires `uv` 0.1.28 or newer. Install `uv` from the
+[official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```bash
 uv tool install git+https://github.com/hfoffani/pr-review-council.git
 ```
 
-`uv` 0.1.28 or newer is required. Install `uv` from the
-[official installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+Then run `prc` directly:
 
-One-line installer from GitHub:
+```bash
+prc config
+prc review /path/to/repo my-feature-branch
+```
+
+Shortcut installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | bash
 ```
 
-The installer uses `uv tool install` to install the `prc` command into an
-isolated Python environment. It asks for confirmation before installing.
-
-Inspect the installer before running it:
+The installer is a thin wrapper around `uv tool install` and asks for
+confirmation before installing. To inspect it first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh
 ```
 
-Upgrade from GitHub:
+If `prc` is not found after installation:
+
+```bash
+uv tool update-shell
+```
+
+Upgrade or uninstall:
 
 ```bash
 uv tool upgrade pr-review-council
-```
-
-Uninstall:
-
-```bash
 uv tool uninstall pr-review-council
 ```
-
-Installer options:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_INSTALL_REF=v0.1.0 bash
-curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_REPO_URL=https://github.com/example/pr-review-council.git bash
-curl -fsSL https://raw.githubusercontent.com/hfoffani/pr-review-council/main/install.sh | PRC_YES=1 bash
-```
-
-`PRC_INSTALL_REF` installs a specific branch, tag, or commit. `PRC_REPO_URL`
-installs from a fork. `PRC_YES=1` skips the confirmation prompt for automated
-setup.
-
-Troubleshooting:
-
-- If `uv` is missing or too old, install or update it from the official `uv`
-  installation guide.
-- If installation succeeds but `prc` is not found, run `uv tool update-shell`
-  and open a new terminal.
-- If an existing install behaves strangely, rerun the installer or use
-  `uv tool upgrade pr-review-council`.
 
 ## Configure
 
@@ -172,10 +155,22 @@ Then add `deepseek-v3` (or whichever id) to `[council].models`.
 
 API keys live in this file. The included `.gitignore` excludes `prc.toml` and `.prc.toml`. If you copy the config into another repo, add it to that repo's `.gitignore` first.
 
+### Custom prompts
+
+To tune the reviewer, peer-critique, or chair prompts, run:
+
+```bash
+prc config --edit-prompts
+```
+
+If `~/.local/pr-review-council/prompts.toml` does not exist, `prc` creates it
+from the built-in prompts first. Missing prompt sections fall back to the
+built-ins.
+
 ## Run
 
 ```bash
-uv run prc review /path/to/repo my-feature-branch -v
+prc review /path/to/repo my-feature-branch -v
 ```
 
 With no positional arguments, `prc review` uses the current directory and
@@ -194,6 +189,7 @@ prc review [repo] [branch]
     [--council MODEL[,MODEL...]]        # override config council
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
+    [--disclose]                        # append reviewer identity mapping
     [--config PATH]                     # explicit config file
     [--max-diff-bytes N]                # truncation cap, default 600000
     [--timeout SECS]                    # per-call, default 180
@@ -201,6 +197,7 @@ prc review [repo] [branch]
 
 prc config
     [--edit]                            # open config in $EDITOR
+    [--edit-prompts]                    # create/open custom prompts in $EDITOR
     [--config PATH]                     # explicit config file
     [--council MODEL[,MODEL...]]        # override displayed council
     [--chairman MODEL]                  # override displayed chair
@@ -217,6 +214,25 @@ calls or validate the key with the provider, so it does not consume LLM tokens.
 Exit codes: `0` ok · `2` chair failed · `3` council collapsed (<2 R1 survivors) · `4` git/diff error · `5` config or missing API key.
 
 ## Tests
+## How it works
+
+1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
+2. **Round 1 (parallel)** — every council member reviews the diff blind.
+3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
+4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
+
+Models never see real identities of peers; the orchestrator holds the letter mapping in memory only.
+
+## Development
+
+From a cloned repo, use the project environment:
+
+```bash
+uv sync
+uv run prc review /path/to/repo my-feature-branch -v
+```
+
+Run tests:
 
 ```bash
 uv run pytest

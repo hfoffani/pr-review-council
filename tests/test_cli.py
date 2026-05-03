@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -111,9 +113,11 @@ def test_cli_happy_path_prints_final_review(
         made.append(model)
         return FakeReviewer(model)
 
-    def run_council(reviewers, ctx, timeout, verbose):
+    def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
         assert [r.model for r in reviewers] == ["model-a", "model-b"]
         assert ctx.render() == "<diff>\ndiff body\n</diff>"
+        assert progress is not None
+        assert prompts.reviewer
         return CouncilOutcome(
             r1={
                 "A": ("model-a", "review a"),
@@ -121,9 +125,10 @@ def test_cli_happy_path_prints_final_review(
             }
         )
 
-    def synthesize(chair, outcome, ctx, timeout):
+    def synthesize(chair, outcome, ctx, timeout, prompts):
         assert chair.model == "chair-model"
         assert set(outcome.r1) == {"A", "B"}
+        assert prompts.chairman
         return "final review"
 
     monkeypatch.setattr(cli, "make_reviewer", make_reviewer)
@@ -137,6 +142,310 @@ def test_cli_happy_path_prints_final_review(
     assert made == ["chair-model", "model-a", "model-b"]
 
 
+def test_cli_disclose_appends_reviewer_identities(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
+            r1={
+                "B": ("model-b", "review b"),
+                "A": ("model-a", "review a"),
+            }
+        ),
+    )
+
+    def synthesize(chair, outcome, ctx, timeout, prompts):
+        assert "model-a" not in outcome.r1["A"][1]
+        assert "model-b" not in outcome.r1["B"][1]
+        assert prompts.chairman
+        return "final review"
+
+    monkeypatch.setattr(cli, "synthesize", synthesize)
+
+    res = runner.invoke(
+        cli.app, ["review", str(tmp_path), "feature", "--disclose"]
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == (
+        "final review\n"
+        "---\n\n"
+        "Reviewer identities:\n"
+        "- Reviewer A: model-a\n"
+        "- Reviewer B: model-b\n"
+    )
+
+
+def test_cli_uses_custom_prompts_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prompts_path = tmp_path / "prompts.toml"
+    prompts_path.write_text(
+        '[reviewer]\nsystem = "custom reviewer"\n\n'
+        '[cross_eval]\nsystem = "custom cross eval"\n\n'
+        '[chairman]\nsystem = "custom chair"\n'
+    )
+
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+
+    def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
+        assert prompts.reviewer == "custom reviewer"
+        assert prompts.cross_eval == "custom cross eval"
+        return CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        )
+
+    def synthesize(chair, outcome, ctx, timeout, prompts):
+        assert prompts.chairman == "custom chair"
+        return "final"
+
+    monkeypatch.setattr(cli, "run_council", run_council)
+    monkeypatch.setattr(cli, "synthesize", synthesize)
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 0
+    assert res.stdout == "final\n"
+
+
+def test_cli_bad_prompts_file_exits_5(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prompts_path = tmp_path / "prompts.toml"
+    prompts_path.write_text("[reviewer]\nsystem = []\n")
+
+    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("council should not run")
+        ),
+    )
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 5
+    assert "prompts.toml" in res.stderr
+    assert "system" in res.stderr
+
+
+def test_cli_progress_wraps_llm_work(
+    tmp_path: Path, monkeypatch
+) -> None:
+    events: list[str] = []
+
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    @contextmanager
+    def fake_progress(*, enabled: bool) -> Iterator[Callable[[str], None]]:
+        assert enabled is True
+        events.append("open")
+
+        def update(message: str) -> None:
+            events.append(message)
+
+        try:
+            yield update
+        finally:
+            events.append("closed")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "_review_progress", fake_progress)
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: (
+            progress("r1"),
+            progress("r2"),
+            CouncilOutcome(
+                r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+            ),
+        )[-1],
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "final")
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 0
+    assert res.stdout == "final\n"
+    assert events == [
+        "open",
+        cli.PROGRESS_COUNCIL_START,
+        cli.PROGRESS_R1,
+        cli.PROGRESS_R2,
+        cli.PROGRESS_CHAIR,
+        "closed",
+    ]
+
+
+def test_cli_progress_closes_before_council_collapse(
+    tmp_path: Path, monkeypatch
+) -> None:
+    events: list[str] = []
+
+    @contextmanager
+    def fake_progress(*, enabled: bool) -> Iterator[Callable[[str], None]]:
+        assert enabled is True
+        events.append("open")
+
+        def update(message: str) -> None:
+            events.append(message)
+
+        try:
+            yield update
+        finally:
+            events.append("closed")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "_review_progress", fake_progress)
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: (
+            progress("r1"),
+            CouncilOutcome(r1={"A": ("model-a", "a")}),
+        )[-1],
+    )
+    monkeypatch.setattr(
+        cli,
+        "synthesize",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("chair should not run")
+        ),
+    )
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 3
+    assert "council collapsed" in res.stderr
+    assert events == ["open", cli.PROGRESS_COUNCIL_START, cli.PROGRESS_R1, "closed"]
+
+
+def test_review_progress_disabled_when_stderr_is_not_terminal(
+    monkeypatch,
+) -> None:
+    class FakeConsole:
+        is_terminal = False
+
+        def __init__(self, *, stderr: bool) -> None:
+            assert stderr is True
+
+    def fail_progress(*args, **kwargs):
+        raise AssertionError("progress renderer should not start")
+
+    monkeypatch.setattr(cli, "Console", FakeConsole)
+    monkeypatch.setattr(cli, "Progress", fail_progress)
+
+    with cli._review_progress(enabled=True) as progress:
+        progress("ignored")
+
+
 def test_cli_without_subcommand_lists_commands() -> None:
     res = runner.invoke(cli.app, [])
 
@@ -144,6 +453,8 @@ def test_cli_without_subcommand_lists_commands() -> None:
     assert "review" in res.stdout
     assert "config" in res.stdout
     assert "help" in res.stdout
+    assert "uv tool upgrade pr-review-council" in res.stdout
+    assert "uv tool uninstall pr-review-council" in res.stdout
 
 
 def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
@@ -173,7 +484,7 @@ def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "run_council",
-        lambda reviewers, ctx, timeout, verbose: CouncilOutcome(
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
             r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
         ),
     )
@@ -251,6 +562,36 @@ def test_config_edit_uses_editor(monkeypatch) -> None:
     assert calls == [["editor", "--wait", "/tmp/prc.toml"]]
 
 
+def test_config_edit_prompts_creates_and_opens_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prompts_path = tmp_path / "home/prompts.toml"
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setenv("EDITOR", "editor --wait")
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda cmd, check: calls.append(cmd),
+    )
+    monkeypatch.setattr(
+        cli.cfg,
+        "load",
+        lambda explicit=None: (_ for _ in ()).throw(
+            AssertionError("config should not load")
+        ),
+    )
+
+    res = runner.invoke(cli.app, ["config", "--edit-prompts"])
+
+    assert res.exit_code == 0
+    assert calls == [["editor", "--wait", str(prompts_path)]]
+    assert "[reviewer]" in prompts_path.read_text()
+    assert "[cross_eval]" in prompts_path.read_text()
+    assert "[chairman]" in prompts_path.read_text()
+
+
 def test_config_edit_requires_editor(monkeypatch) -> None:
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.delenv("EDITOR", raising=False)
@@ -267,6 +608,7 @@ def test_help_review_shows_options() -> None:
     assert res.exit_code == 0
     assert "Usage: prc review" in res.stdout
     assert "--base BASE" in res.stdout
+    assert "--disclose" in res.stdout
     assert "--timeout SECS" in res.stdout
 
 
@@ -276,4 +618,5 @@ def test_help_config_shows_options() -> None:
     assert res.exit_code == 0
     assert "Usage: prc config" in res.stdout
     assert "--edit" in res.stdout
+    assert "--edit-prompts" in res.stdout
     assert "--config PATH" in res.stdout

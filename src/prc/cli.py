@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import os
 import shlex
 import subprocess
@@ -8,11 +10,14 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from . import config as cfg
+from . import prompts as prompt_cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
-from .council import run_council
+from .council import CouncilOutcome, CouncilPhase, run_council
 from .git_ops import GitError, capture_diff, current_branch
 from .reviewers import make_reviewer, resolve_reviewer
 
@@ -41,10 +46,11 @@ Options:
   --chairman MODEL            Override config chair.
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
+  --disclose                  Append reviewer letter -> model name mapping.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
-  --timeout SECS              Per-call timeout, default 180.
-  -v, --verbose               Progress to stderr.
+  --timeout SECS              Per-model API call timeout in seconds, default 180.
+  -v, --verbose               Detailed progress to stderr.
 """
 
 
@@ -55,6 +61,7 @@ Show active chair/council configuration and provider/API-key resolution.
 
 Options:
   --edit                      Open the selected config file in $EDITOR.
+  --edit-prompts              Create/open custom prompt overrides in $EDITOR.
   --config PATH               Explicit config file.
   --council MODEL[,MODEL...]  Override config council for display.
   --chairman MODEL            Override config chair for display.
@@ -103,6 +110,13 @@ def review(
             help="Include chair as a council member; chair's R1 review is reused",
         ),
     ] = False,
+    disclose: Annotated[
+        bool,
+        typer.Option(
+            "--disclose",
+            help="Append reviewer letter to model name mapping to final output",
+        ),
+    ] = False,
     config_path: Annotated[
         Optional[Path], typer.Option("--config", help="Explicit config path")
     ] = None,
@@ -110,9 +124,15 @@ def review(
         int, typer.Option("--max-diff-bytes", help="Truncation cap (chars)")
     ] = 600_000,
     timeout: Annotated[
-        float, typer.Option("--timeout", help="Per-call timeout in seconds")
+        float,
+        typer.Option(
+            "--timeout", help="Per-model API call timeout in seconds"
+        ),
     ] = 180.0,
-    verbose: Annotated[bool, typer.Option("-v", "--verbose")] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("-v", "--verbose", help="Detailed progress to stderr"),
+    ] = False,
 ) -> None:
     try:
         c = cfg.load(explicit=config_path)
@@ -199,10 +219,35 @@ def review(
             file=sys.stderr,
         )
 
+    try:
+        prompts = prompt_cfg.load_prompts()
+    except ValueError as e:
+        print(f"prc: config error: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
     ctx = DiffOnlyContext(diff=diff.diff)
-    outcome = run_council(
-        reviewers, ctx, timeout=timeout, verbose=verbose
-    )
+    final: str | None = None
+    chair_error: BaseException | None = None
+    with _review_progress(enabled=not verbose) as progress:
+        progress(PROGRESS_COUNCIL_START)
+        outcome = run_council(
+            reviewers,
+            ctx,
+            timeout=timeout,
+            verbose=verbose,
+            progress=_council_progress(progress),
+            prompts=prompts,
+        )
+
+        if len(outcome.r1) >= 2:
+            progress(PROGRESS_CHAIR)
+            try:
+                final = synthesize(
+                    chair, outcome, ctx, timeout=timeout, prompts=prompts
+                )
+            except Exception as e:
+                chair_error = e
+
     if len(outcome.r1) < 2:
         print(
             f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); "
@@ -213,14 +258,21 @@ def review(
             print(f"prc:   {letter}: {why}", file=sys.stderr)
         raise typer.Exit(3)
 
-    try:
-        final = synthesize(chair, outcome, ctx, timeout=timeout)
-    except Exception as e:
-        print(f"prc: chair failed: {e!r}", file=sys.stderr)
+    if chair_error is not None:
+        print(
+            f"prc: chair failed: {_format_exception(chair_error)}",
+            file=sys.stderr,
+        )
+        raise typer.Exit(2)
+
+    if final is None:
+        print("prc: chair failed: no verdict produced", file=sys.stderr)
         raise typer.Exit(2)
 
     if verbose:
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
+    if disclose:
+        final = _append_reviewer_identities(final, outcome)
     print(final)
 
 
@@ -232,6 +284,13 @@ def config_command(
     edit: Annotated[
         bool,
         typer.Option("--edit", help="Open the selected config file in $EDITOR"),
+    ] = False,
+    edit_prompts: Annotated[
+        bool,
+        typer.Option(
+            "--edit-prompts",
+            help="Create/open custom prompt overrides in $EDITOR",
+        ),
     ] = False,
     council: Annotated[
         Optional[str],
@@ -251,6 +310,10 @@ def config_command(
         ),
     ] = False,
 ) -> None:
+    if edit_prompts:
+        _edit_config(prompt_cfg.create_default_prompts())
+        raise typer.Exit(0)
+
     try:
         c = cfg.load(explicit=config_path)
     except cfg.ConfigMissing as e:
@@ -314,6 +377,80 @@ def _print_subcommands() -> None:
     print("Commands:")
     for name, description in SUBCOMMANDS.items():
         print(f"  {name:<8} {description}")
+    print()
+    print("Installed with uv?")
+    print("  Upgrade:   uv tool upgrade pr-review-council")
+    print("  Uninstall: uv tool uninstall pr-review-council")
+
+
+PROGRESS_COUNCIL_START = "prc: council starting..."
+PROGRESS_R1 = "prc: council reviewing diff..."
+PROGRESS_R2 = "prc: council reviewing reviewers..."
+PROGRESS_CHAIR = "prc: chair writing verdict..."
+
+
+@contextmanager
+def _review_progress(
+    *, enabled: bool
+) -> Iterator[Callable[[str], None]]:
+    def noop(_message: str) -> None:
+        return
+
+    if not enabled:
+        yield noop
+        return
+
+    console = Console(stderr=True)
+    if not console.is_terminal:
+        yield noop
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        console=console,
+        transient=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+    ) as progress:
+        task_id = progress.add_task(PROGRESS_COUNCIL_START, total=None)
+
+        def update(message: str) -> None:
+            progress.update(task_id, description=message)
+
+        yield update
+
+
+def _council_progress(
+    progress: Callable[[str], None]
+) -> Callable[[CouncilPhase], None]:
+    def update(phase: CouncilPhase) -> None:
+        if phase == "r1":
+            progress(PROGRESS_R1)
+        elif phase == "r2":
+            progress(PROGRESS_R2)
+
+    return update
+
+
+def _format_exception(error: BaseException) -> str:
+    return repr(error)
+
+
+def _append_reviewer_identities(
+    final: str, outcome: CouncilOutcome
+) -> str:
+    lines = [
+        "",
+        "---",
+        "",
+        "Reviewer identities:",
+    ]
+    lines.extend(
+        f"- Reviewer {letter}: {model}"
+        for letter, (model, _review) in sorted(outcome.r1.items())
+    )
+    return final.rstrip() + "\n".join(lines)
 
 
 def _print_config(

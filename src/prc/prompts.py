@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
 REVIEWER_SYSTEM = """\
 You are a senior software engineer performing a code review on a pull \
 request diff. Focus on correctness, security, concurrency, edge cases, \
@@ -58,3 +65,82 @@ For each split: what the reviewers disagreed on, and the chair's call.
 ## Verdict
 A single line: `Verdict: approve` | `Verdict: request-changes` | `Verdict: comment`.
 """
+
+
+@dataclass(frozen=True)
+class PromptSet:
+    reviewer: str
+    cross_eval: str
+    chairman: str
+
+
+DEFAULT_PROMPTS = PromptSet(
+    reviewer=REVIEWER_SYSTEM,
+    cross_eval=CROSS_EVAL_SYSTEM,
+    chairman=CHAIRMAN_SYSTEM,
+)
+
+DEFAULT_PROMPTS_PATH = (
+    Path.home() / ".local" / "pr-review-council" / "prompts.toml"
+)
+
+
+def create_default_prompts(path: Path | None = None) -> Path:
+    if path is None:
+        path = DEFAULT_PROMPTS_PATH
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_default_prompts_template())
+    return path
+
+
+def load_prompts(path: Path | None = None) -> PromptSet:
+    if path is None:
+        path = DEFAULT_PROMPTS_PATH
+    if not path.exists():
+        return DEFAULT_PROMPTS
+
+    data = tomllib.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: prompts file must be a TOML table")
+
+    return PromptSet(
+        reviewer=_prompt_value(path, data, "reviewer", DEFAULT_PROMPTS.reviewer),
+        cross_eval=_prompt_value(
+            path, data, "cross_eval", DEFAULT_PROMPTS.cross_eval
+        ),
+        chairman=_prompt_value(path, data, "chairman", DEFAULT_PROMPTS.chairman),
+    )
+
+
+def _prompt_value(
+    path: Path, data: dict[str, Any], section: str, default: str
+) -> str:
+    table = data.get(section)
+    if table is None:
+        return default
+    if not isinstance(table, dict):
+        raise ValueError(f"{path}: [{section}] must be a table")
+
+    value = table.get("system")
+    if value is None:
+        return default
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{path}: [{section}].system must be a non-empty string")
+    return value
+
+
+def _default_prompts_template() -> str:
+    return "\n\n".join(
+        [
+            _prompt_section("reviewer", DEFAULT_PROMPTS.reviewer),
+            _prompt_section("cross_eval", DEFAULT_PROMPTS.cross_eval),
+            _prompt_section("chairman", DEFAULT_PROMPTS.chairman),
+            "",
+        ]
+    )
+
+
+def _prompt_section(name: str, value: str) -> str:
+    return f'[{name}]\nsystem = """\n{value.rstrip()}\n"""'
