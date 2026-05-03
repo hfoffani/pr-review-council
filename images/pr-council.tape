@@ -15,7 +15,9 @@ Set PlaybackSpeed 1.5
 Hide
 Type "export PS1='$ '"
 Enter
-Type "alias prc='uv run python images/demo.py'"
+Type "alias prc='uv run -q python images/demo.py'"
+Enter
+Type "uv run -q python -c '' >/dev/null 2>&1"
 Enter
 Type "clear"
 Enter
