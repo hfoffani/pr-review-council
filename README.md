@@ -157,6 +157,7 @@ prc review [repo] [branch]
     [--council MODEL[,MODEL...]]        # override config council
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
+    [--disclose]                        # append reviewer identity mapping
     [--config PATH]                     # explicit config file
     [--max-diff-bytes N]                # truncation cap, default 600000
     [--timeout SECS]                    # per-call, default 180

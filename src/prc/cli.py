@@ -16,7 +16,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from . import config as cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
-from .council import CouncilPhase, run_council
+from .council import CouncilOutcome, CouncilPhase, run_council
 from .git_ops import GitError, capture_diff, current_branch
 from .reviewers import make_reviewer, resolve_reviewer
 
@@ -45,6 +45,7 @@ Options:
   --chairman MODEL            Override config chair.
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
+  --disclose                  Append reviewer letter -> model name mapping.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
   --timeout SECS              Per-model API call timeout in seconds, default 180.
@@ -105,6 +106,13 @@ def review(
         typer.Option(
             "--chair-on-council/--no-chair-on-council",
             help="Include chair as a council member; chair's R1 review is reused",
+        ),
+    ] = False,
+    disclose: Annotated[
+        bool,
+        typer.Option(
+            "--disclose",
+            help="Append reviewer letter to model name mapping to final output",
         ),
     ] = False,
     config_path: Annotated[
@@ -252,6 +260,8 @@ def review(
 
     if verbose:
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
+    if disclose:
+        final = _append_reviewer_identities(final, outcome)
     print(final)
 
 
@@ -403,6 +413,22 @@ def _council_progress(
 
 def _format_exception(error: BaseException) -> str:
     return repr(error)
+
+
+def _append_reviewer_identities(
+    final: str, outcome: CouncilOutcome
+) -> str:
+    lines = [
+        "",
+        "---",
+        "",
+        "Reviewer identities:",
+    ]
+    lines.extend(
+        f"- Reviewer {letter}: {model}"
+        for letter, (model, _review) in sorted(outcome.r1.items())
+    )
+    return final.rstrip() + "\n".join(lines)
 
 
 def _print_config(
