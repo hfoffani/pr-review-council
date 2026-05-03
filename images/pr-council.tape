@@ -27,4 +27,4 @@ Sleep 500ms
 Type "prc review"
 Sleep 400ms
 Enter
-Sleep 7s
+Sleep 10s
