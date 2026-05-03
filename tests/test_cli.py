@@ -140,6 +140,64 @@ def test_cli_happy_path_prints_final_review(
     assert made == ["chair-model", "model-a", "model-b"]
 
 
+def test_cli_disclose_appends_reviewer_identities(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, max_bytes: DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress: CouncilOutcome(
+            r1={
+                "B": ("model-b", "review b"),
+                "A": ("model-a", "review a"),
+            }
+        ),
+    )
+
+    def synthesize(chair, outcome, ctx, timeout):
+        assert "model-a" not in outcome.r1["A"][1]
+        assert "model-b" not in outcome.r1["B"][1]
+        return "final review"
+
+    monkeypatch.setattr(cli, "synthesize", synthesize)
+
+    res = runner.invoke(
+        cli.app, ["review", str(tmp_path), "feature", "--disclose"]
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == (
+        "final review\n"
+        "---\n\n"
+        "Reviewer identities:\n"
+        "- Reviewer A: model-a\n"
+        "- Reviewer B: model-b\n"
+    )
+
+
 def test_cli_progress_wraps_llm_work(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -421,6 +479,7 @@ def test_help_review_shows_options() -> None:
     assert res.exit_code == 0
     assert "Usage: prc review" in res.stdout
     assert "--base BASE" in res.stdout
+    assert "--disclose" in res.stdout
     assert "--timeout SECS" in res.stdout
 
 
