@@ -204,7 +204,8 @@ def test_cli_disclose_appends_reviewer_identities(
 def test_cli_uses_custom_prompts_file(
     tmp_path: Path, monkeypatch
 ) -> None:
-    prompts_path = tmp_path / "prompts.toml"
+    prompts_path = tmp_path / "config/pr-review-council/prompts.toml"
+    prompts_path.parent.mkdir(parents=True)
     prompts_path.write_text(
         '[reviewer]\nsystem = "custom reviewer"\n\n'
         '[cross_eval]\nsystem = "custom cross eval"\n\n'
@@ -215,7 +216,7 @@ def test_cli_uses_custom_prompts_file(
         def __init__(self, model: str) -> None:
             self.model = model
 
-    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.setattr(
         cli,
@@ -259,10 +260,11 @@ def test_cli_uses_custom_prompts_file(
 def test_cli_bad_prompts_file_exits_5(
     tmp_path: Path, monkeypatch
 ) -> None:
-    prompts_path = tmp_path / "prompts.toml"
+    prompts_path = tmp_path / "config/pr-review-council/prompts.toml"
+    prompts_path.parent.mkdir(parents=True)
     prompts_path.write_text("[reviewer]\nsystem = []\n")
 
-    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.setattr(
         cli,
@@ -565,10 +567,11 @@ def test_config_edit_uses_editor(monkeypatch) -> None:
 def test_config_edit_prompts_creates_and_opens_file(
     tmp_path: Path, monkeypatch
 ) -> None:
-    prompts_path = tmp_path / "home/prompts.toml"
+    config_home = tmp_path / "config"
+    prompts_path = config_home / "pr-review-council/prompts.toml"
     calls: list[list[str]] = []
 
-    monkeypatch.setattr(cli.prompt_cfg, "DEFAULT_PROMPTS_PATH", prompts_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     monkeypatch.setenv("EDITOR", "editor --wait")
     monkeypatch.setattr(
         cli.subprocess,

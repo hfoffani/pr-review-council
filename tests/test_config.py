@@ -51,13 +51,12 @@ def test_lookup_prefers_cwd_over_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cwd = tmp_path / "cwd"
-    home = tmp_path / "home"
+    config_home = tmp_path / "config"
     cwd.mkdir()
-    home.mkdir()
     (cwd / "prc.toml").write_text(VALID)
-    fallback = home / ".local/pr-review-council/config.toml"
+    fallback = config_home / "pr-review-council/config.toml"
     _write(fallback, VALID)
-    monkeypatch.setattr(cfg, "DEFAULT_CONFIG_PATH", fallback)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     found = cfg.find_config(cwd=cwd)
     assert found == cwd / "prc.toml"
 
@@ -67,18 +66,45 @@ def test_lookup_falls_back_to_default(
 ) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
-    fallback = tmp_path / "home/.local/pr-review-council/config.toml"
+    config_home = tmp_path / "config"
+    fallback = config_home / "pr-review-council/config.toml"
     _write(fallback, VALID)
-    monkeypatch.setattr(cfg, "DEFAULT_CONFIG_PATH", fallback)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     found = cfg.find_config(cwd=cwd)
     assert found == fallback
+
+
+def test_default_config_path_respects_xdg_config_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    assert (
+        cfg.default_config_path()
+        == config_home / "pr-review-council/config.toml"
+    )
+
+
+def test_default_config_path_falls_back_to_home_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    assert (
+        cfg.default_config_path()
+        == home / ".config/pr-review-council/config.toml"
+    )
 
 
 def test_missing_creates_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fallback = tmp_path / "home/.local/pr-review-council/config.toml"
-    monkeypatch.setattr(cfg, "DEFAULT_CONFIG_PATH", fallback)
+    config_home = tmp_path / "config"
+    fallback = config_home / "pr-review-council/config.toml"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     with pytest.raises(cfg.ConfigMissing) as exc:

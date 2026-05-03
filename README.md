@@ -95,12 +95,12 @@ uv tool uninstall pr-review-council
 
 ## Configure
 
-First run with no config creates `~/.local/pr-review-council/config.toml` with placeholders and exits with code 5. Edit it to fill in API keys (or leave them blank and use env vars).
+First run with no config creates `${XDG_CONFIG_HOME:-~/.config}/pr-review-council/config.toml` with placeholders and exits with code 5. Edit it to fill in API keys (or leave them blank and use env vars).
 
 Lookup order:
 1. `--config PATH` if given
 2. `./prc.toml` in the current working directory
-3. `~/.local/pr-review-council/config.toml`
+3. `${XDG_CONFIG_HOME:-~/.config}/pr-review-council/config.toml`
 
 Default config:
 
@@ -185,7 +185,7 @@ To tune the reviewer, peer-critique, or chair prompts, run:
 prc config --edit-prompts
 ```
 
-If `~/.local/pr-review-council/prompts.toml` does not exist, `prc` creates it
+If `${XDG_CONFIG_HOME:-~/.config}/pr-review-council/prompts.toml` does not exist, `prc` creates it
 from the built-in prompts first. Missing prompt sections fall back to the
 built-ins.
 

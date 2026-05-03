@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 
@@ -80,14 +81,26 @@ DEFAULT_PROMPTS = PromptSet(
     chairman=CHAIRMAN_SYSTEM,
 )
 
-DEFAULT_PROMPTS_PATH = (
-    Path.home() / ".local" / "pr-review-council" / "prompts.toml"
-)
+APP_CONFIG_DIR = "pr-review-council"
+
+
+def default_prompts_dir() -> Path:
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home).expanduser() / APP_CONFIG_DIR
+    return Path.home() / ".config" / APP_CONFIG_DIR
+
+
+def default_prompts_path() -> Path:
+    return default_prompts_dir() / "prompts.toml"
+
+
+DEFAULT_PROMPTS_PATH = default_prompts_path()
 
 
 def create_default_prompts(path: Path | None = None) -> Path:
     if path is None:
-        path = DEFAULT_PROMPTS_PATH
+        path = default_prompts_path()
     if path.exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +110,7 @@ def create_default_prompts(path: Path | None = None) -> Path:
 
 def load_prompts(path: Path | None = None) -> PromptSet:
     if path is None:
-        path = DEFAULT_PROMPTS_PATH
+        path = default_prompts_path()
     if not path.exists():
         return DEFAULT_PROMPTS
 
