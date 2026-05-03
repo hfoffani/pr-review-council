@@ -20,6 +20,16 @@ class DiffResult:
     bytes_total: int
 
 
+BASE_CANDIDATES = (
+    "origin/main",
+    "main",
+    "origin/develop",
+    "develop",
+    "origin/master",
+    "master",
+)
+
+
 def _run(cmd: list[str], cwd: Path) -> str:
     res = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
     if res.returncode != 0:
@@ -30,26 +40,66 @@ def _run(cmd: list[str], cwd: Path) -> str:
 
 
 def detect_base(repo: Path, branch: str) -> str:
-    """Return a ref usable on the left of `<base>...<branch>`."""
-    try:
-        upstream = _run(
-            ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
-            repo,
-        ).strip()
-        if upstream:
-            return upstream
-    except GitError:
-        pass
-    for candidate in ("main", "master", "origin/main", "origin/master"):
+    """Return the likely target ref for a two-dot review diff."""
+    scores: list[tuple[int, int, int, int, str]] = []
+    branch_commit = _run(["git", "rev-parse", "--verify", branch], repo).strip()
+
+    for idx, candidate in enumerate(BASE_CANDIDATES):
         try:
-            _run(["git", "rev-parse", "--verify", candidate], repo)
-            return candidate
+            candidate_commit = _run(
+                ["git", "rev-parse", "--verify", candidate], repo
+            ).strip()
+            if candidate_commit == branch_commit:
+                continue
+            numstat = _run(
+                [
+                    "git",
+                    "diff",
+                    "--numstat",
+                    "--no-renames",
+                    f"{candidate}..{branch}",
+                ],
+                repo,
+            )
         except GitError:
             continue
+
+        files_changed, binary_files_changed, lines_changed = _numstat_score(
+            numstat
+        )
+        scores.append(
+            (files_changed, binary_files_changed, lines_changed, idx, candidate)
+        )
+
+    if scores:
+        return min(scores)[4]
+
     raise GitError(
         f"could not detect base ref for branch {branch!r}; "
         "pass --base explicitly"
     )
+
+
+def _numstat_score(numstat: str) -> tuple[int, int, int]:
+    files_changed = 0
+    binary_files_changed = 0
+    lines_changed = 0
+    for line in numstat.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 3:
+            raise GitError(f"malformed git numstat line: {line!r}")
+        files_changed += 1
+        added, deleted, *_rest = parts
+        if added == "-" or deleted == "-":
+            binary_files_changed += 1
+            continue
+        try:
+            lines_changed += int(added) + int(deleted)
+        except ValueError as e:
+            raise GitError(f"malformed git numstat line: {line!r}") from e
+    return files_changed, binary_files_changed, lines_changed
 
 
 def current_branch(repo: Path) -> str:
@@ -71,7 +121,8 @@ def capture_diff(
     if not (repo / ".git").exists():
         raise GitError(f"{repo} is not a git repository")
     base_ref = base or detect_base(repo, branch)
-    diff = _run(["git", "diff", f"{base_ref}...{branch}"], repo)
+    diff_range = f"{base_ref}..{branch}"
+    diff = _run(["git", "diff", diff_range], repo)
     bytes_total = len(diff.encode("utf-8"))
 
     if bytes_total == 0:
@@ -93,7 +144,7 @@ def capture_diff(
         )
 
     numstat = _run(
-        ["git", "diff", "--numstat", "--no-renames", f"{base_ref}...{branch}"],
+        ["git", "diff", "--numstat", "--no-renames", diff_range],
         repo,
     )
     paths = [
@@ -119,7 +170,7 @@ def capture_diff(
     used = 0
     for p in paths:
         per_file = _run(
-            ["git", "diff", "--no-renames", f"{base_ref}...{branch}", "--", p],
+            ["git", "diff", "--no-renames", diff_range, "--", p],
             repo,
         )
         sz = len(per_file.encode("utf-8"))

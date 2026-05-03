@@ -41,7 +41,7 @@ Usage: prc review [repo] [branch] [OPTIONS]
 Review a local git branch with the configured LLM council.
 
 Options:
-  --base BASE                 Override auto-detected base ref.
+  --base BASE                 Target branch/ref to compare against.
   --council MODEL[,MODEL...]  Override config council.
   --chairman MODEL            Override config chair.
   --chair-on-council          Include chair as a council member.
@@ -91,7 +91,8 @@ def review(
         typer.Argument(help="Branch to review; defaults to current branch"),
     ] = None,
     base: Annotated[
-        Optional[str], typer.Option("--base", help="Override auto-detected base ref")
+        Optional[str],
+        typer.Option("--base", help="Target branch/ref to compare against"),
     ] = None,
     council: Annotated[
         Optional[str],

@@ -4,7 +4,7 @@
 
 Multi-LLM council code review for local git branches. Inspired by Andrej Karpathy's
 [LLM Council](https://github.com/karpathy/llm-council),
-`prc` takes a repo + branch, computes the three-dot diff against the auto-detected base,
+`prc` takes a repo + branch, computes the diff against the auto-detected base,
 sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent review in parallel,
 has them critique each other, then a configurable Chairman LLM synthesizes
 the council's reviews into a final markdown PR review printed to stdout.
@@ -165,7 +165,7 @@ prc
     help        Show help for a subcommand.
 
 prc review [repo] [branch]
-    [--base BASE]                       # override auto-detected base
+    [--base BASE]                       # target branch/ref to compare against
     [--council MODEL[,MODEL...]]        # override config council
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
@@ -195,7 +195,7 @@ Exit codes: `0` ok · `2` chair failed · `3` council collapsed (<2 R1 survivors
 
 ## How it works
 
-1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
+1. **Diff capture** — `git diff <base>..<branch>`. Base auto-detected by scoring candidates in this order: `origin/main` → `main` → `origin/develop` → `develop` → `origin/master` → `master`. The smallest changed-file count wins, then binary-file count, then changed-line count, then the candidate order. Override with `--base`.
 2. **Round 1 (parallel)** — every council member reviews the diff blind.
 3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
 4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
