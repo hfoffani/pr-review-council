@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from prc.context import DiffOnlyContext
 from prc.council import run_council
+from prc.prompts import DEFAULT_PROMPTS, PromptSet
 from prc.reviewers.base import Reviewer
 
 
@@ -131,3 +132,25 @@ def test_progress_callback_failures_do_not_abort_council() -> None:
     assert set(out.r1) == {"A", "B"}
     assert set(out.r2) == {"A", "B"}
     assert phases == ["r1", "r2"]
+
+
+def test_custom_prompts_are_used_for_both_council_rounds() -> None:
+    revs = [FakeReviewer("m1"), FakeReviewer("m2")]
+    prompt_set = PromptSet(
+        reviewer="custom reviewer prompt",
+        cross_eval="custom cross eval prompt",
+        chairman=DEFAULT_PROMPTS.chairman,
+    )
+
+    out = run_council(
+        revs,
+        DiffOnlyContext(diff="d"),
+        timeout=5.0,
+        prompts=prompt_set,
+    )
+
+    assert set(out.r1) == {"A", "B"}
+    assert set(out.r2) == {"A", "B"}
+    for rev in revs:
+        assert rev.calls[0][0] == "custom reviewer prompt"
+        assert rev.calls[1][0] == "custom cross eval prompt"

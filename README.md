@@ -135,6 +135,18 @@ Then add `deepseek-v3` (or whichever id) to `[council].models`.
 
 API keys live in this file. The included `.gitignore` excludes `prc.toml` and `.prc.toml`. If you copy the config into another repo, add it to that repo's `.gitignore` first.
 
+### Custom prompts
+
+To tune the reviewer, peer-critique, or chair prompts, run:
+
+```bash
+prc config --edit-prompts
+```
+
+If `~/.local/pr-review-council/prompts.toml` does not exist, `prc` creates it
+from the built-in prompts first. Missing prompt sections fall back to the
+built-ins.
+
 ## Run
 
 ```bash
@@ -165,6 +177,7 @@ prc review [repo] [branch]
 
 prc config
     [--edit]                            # open config in $EDITOR
+    [--edit-prompts]                    # create/open custom prompts in $EDITOR
     [--config PATH]                     # explicit config file
     [--council MODEL[,MODEL...]]        # override displayed council
     [--chairman MODEL]                  # override displayed chair
