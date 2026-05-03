@@ -10,3 +10,5 @@ build/
 # never commit local config — it contains API keys
 prc.toml
 .prc.toml
+
+.claude/settings.local.json
