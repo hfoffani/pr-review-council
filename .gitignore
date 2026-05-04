@@ -12,3 +12,4 @@ prc.toml
 .prc.toml
 
 .claude/settings.local.json
+.claude/worktrees
