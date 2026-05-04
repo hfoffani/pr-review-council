@@ -116,6 +116,21 @@ def test_github_unauthenticated_cli_has_login_message(monkeypatch) -> None:
         )
 
 
+def test_github_subprocess_oserror_is_reported(monkeypatch) -> None:
+    monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
+
+    def run(cmd, text, capture_output):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
+
+    with pytest.raises(PRPlatformError, match="failed to run 'gh'.*permission denied"):
+        GitHubPullRequestPlatform().fetch_diff(
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            max_bytes=600_000,
+        )
+
+
 def test_github_diff_truncation_preserves_lines_and_reports_original_bytes(
     monkeypatch,
 ) -> None:

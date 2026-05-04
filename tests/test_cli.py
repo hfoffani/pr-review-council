@@ -401,7 +401,20 @@ def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
     )
 
     assert res.exit_code == 2
-    assert "do not support branch or --base" in res.stderr
+    assert "do not support a branch argument" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--base",
+            "main",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "do not support --base" in res.stderr
 
     res = runner.invoke(
         cli.app,

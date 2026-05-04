@@ -165,11 +165,14 @@ def review(
         raise typer.Exit(2)
 
     remote_url = repo if is_pr_url(repo) else None
-    if remote_url is not None and (branch is not None or base is not None):
+    if remote_url is not None and branch is not None:
         print(
-            "prc: PR URL reviews do not support branch or --base arguments",
+            "prc: PR URL reviews do not support a branch argument",
             file=sys.stderr,
         )
+        raise typer.Exit(2)
+    if remote_url is not None and base is not None:
+        print("prc: PR URL reviews do not support --base", file=sys.stderr)
         raise typer.Exit(2)
     if remote_url is None and post:
         print("prc: --post requires a pull request URL", file=sys.stderr)
@@ -217,8 +220,10 @@ def review(
     on_council_flag = chair_on_council or c.chair_on_council
 
     if remote_url is not None:
+        if platform is None:
+            print("prc: unsupported PR platform", file=sys.stderr)
+            raise typer.Exit(4)
         try:
-            assert platform is not None
             diff = platform.fetch_diff(remote_url, max_bytes=max_diff_bytes)
         except NotImplementedError as e:
             print(f"prc: {e}", file=sys.stderr)

@@ -63,17 +63,13 @@ def _ensure_gh(url: str) -> None:
             "GitHub CLI not found; install gh from https://cli.github.com/"
         )
     host = _host(url)
-    auth = subprocess.run(
-        [GH, "auth", "status", "--hostname", host],
-        text=True,
-        capture_output=True,
-    )
+    auth = _run_command([GH, "auth", "status", "--hostname", host])
     if auth.returncode != 0:
         raise PRPlatformError(_auth_message(host))
 
 
 def _run_gh(cmd: list[str], url: str) -> str:
-    res = subprocess.run(cmd, text=True, capture_output=True)
+    res = _run_command(cmd)
     if res.returncode != 0:
         stderr = res.stderr.strip()
         if "authentication" in stderr.lower() or "not logged" in stderr.lower():
@@ -81,6 +77,13 @@ def _run_gh(cmd: list[str], url: str) -> str:
         detail = f": {stderr}" if stderr else ""
         raise PRPlatformError(f"gh failed{detail}")
     return res.stdout
+
+
+def _run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(cmd, text=True, capture_output=True)
+    except OSError as e:
+        raise PRPlatformError(f"failed to run {cmd[0]!r}: {e}") from e
 
 
 def _truncate_diff(diff: str, *, max_bytes: int) -> tuple[str, bool, int]:
