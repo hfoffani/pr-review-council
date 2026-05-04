@@ -198,6 +198,28 @@ prc review /path/to/repo my-feature-branch -v
 With no positional arguments, `prc review` uses the current directory and
 current git branch.
 
+### Reviewing remote PRs
+
+`prc review` can also review a pull request URL. GitHub pull requests are
+supported through the GitHub CLI (`gh`); install it and run `gh auth login`
+before reviewing remote PRs.
+
+```bash
+prc review https://github.com/hfoffani/pr-review-council/pull/33
+prc review --dry-run https://github.com/hfoffani/pr-review-council/pull/33
+prc review --post https://github.com/hfoffani/pr-review-council/pull/33
+```
+
+Remote PR reviews default to dry-run mode: the report is printed and no
+comment is posted. `--dry-run` is an explicit spelling of that default. Use
+`--post` only with a supported pull request URL to add the generated report as
+a normal PR comment instead; in that mode `prc` shows progress/errors on stderr
+and does not print the review body. `--dry-run` and `--post` are mutually
+exclusive.
+
+Bitbucket and GitLab URLs are detected, but support is not implemented yet.
+Other hosts are rejected with a clear unsupported-host error.
+
 CLI:
 
 ```
@@ -206,11 +228,13 @@ prc
     config      Show configuration, provider routing, and API-key presence.
     help        Show help for a subcommand.
 
-prc review [repo] [branch]
+prc review [repo|pr-url] [branch]
     [--base BASE]                       # target branch/ref to compare against
     [--council MODEL[,MODEL...]]        # override config council
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
+    [--dry-run]                         # print review without posting
+    [--post]                            # post review; requires supported PR URL
     [--disclose]                        # append reviewer identity mapping
     [--config PATH]                     # explicit config file
     [--max-diff-bytes N]                # truncation cap, default 600000

@@ -201,6 +201,248 @@ def test_cli_disclose_appends_reviewer_identities(
     )
 
 
+def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
+    class FakePlatform:
+        def fetch_diff(self, url, max_bytes):
+            assert url == "https://github.com/hfoffani/pr-review-council/pull/33"
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def post_comment(self, url, body):
+            raise AssertionError("dry run should not post")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("local git diff should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+
+    def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
+        assert ctx.render() == "<diff>\nremote diff\n</diff>"
+        return CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        )
+
+    monkeypatch.setattr(cli, "run_council", run_council)
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "remote final")
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == "remote final\n"
+
+
+def test_cli_remote_pr_post_suppresses_stdout(monkeypatch) -> None:
+    posted: dict[str, str] = {}
+
+    class FakePlatform:
+        supports_posting = True
+
+        def fetch_diff(self, url, max_bytes):
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def post_comment(self, url, body):
+            posted["url"] = url
+            posted["body"] = body
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        ),
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "remote final")
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33", "--post"],
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == ""
+    assert posted == {
+        "url": "https://github.com/hfoffani/pr-review-council/pull/33",
+        "body": "remote final",
+    }
+
+
+def test_cli_remote_pr_post_requires_platform_support(monkeypatch) -> None:
+    class FakePlatform:
+        supports_posting = False
+
+        def fetch_diff(self, url, max_bytes):
+            raise AssertionError("diff should not be fetched")
+
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli.cfg,
+        "load",
+        lambda explicit=None: (_ for _ in ()).throw(
+            AssertionError("config should not be loaded")
+        ),
+    )
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://bitbucket.org/org/repo/pull-requests/1", "--post"],
+    )
+
+    assert res.exit_code == 4
+    assert "--post is not supported" in res.stderr
+
+
+def test_cli_platform_construction_not_implemented_is_reported(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "platform_for_url",
+        lambda url: (_ for _ in ()).throw(
+            NotImplementedError("custom host support is coming soon")
+        ),
+    )
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 4
+    assert "custom host support is coming soon" in res.stderr
+
+
+def test_review_diff_builds_reviewers_and_final(monkeypatch) -> None:
+    class FakeReviewer:
+        def __init__(self, model: str) -> None:
+            self.model = model
+
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: FakeReviewer(model),
+    )
+
+    def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
+        assert [r.model for r in reviewers] == ["model-a", "model-b"]
+        assert ctx.render() == "<diff>\ndiff body\n</diff>"
+        return CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        )
+
+    monkeypatch.setattr(cli, "run_council", run_council)
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "final")
+
+    final, outcome, chair_error = cli._review_diff(
+        c=_config(),
+        council_models=["model-a", "model-b"],
+        chair_model="chair-model",
+        on_council_flag=False,
+        diff=DiffResult(
+            base="main",
+            branch="feature",
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        ),
+        timeout=180,
+        verbose=False,
+    )
+
+    assert final == "final"
+    assert set(outcome.r1) == {"A", "B"}
+    assert chair_error is None
+
+
+def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "feature",
+            "--base",
+            "main",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "do not support a branch argument" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--base",
+            "main",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "do not support --base" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--dry-run",
+            "--post",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "choose either --dry-run or --post" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--post",
+            "--dry-run",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "choose either --dry-run or --post" in res.stderr
+
+
 def test_cli_uses_custom_prompts_file(
     tmp_path: Path, monkeypatch
 ) -> None:
