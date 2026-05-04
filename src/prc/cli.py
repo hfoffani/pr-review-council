@@ -18,7 +18,13 @@ from . import prompts as prompt_cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext
 from .council import CouncilOutcome, CouncilPhase, run_council
-from .git_ops import GitError, capture_diff, current_branch
+from .git_ops import DiffResult, GitError, capture_diff, current_branch
+from .pr_platforms import (
+    PRPlatformError,
+    UnsupportedPRHost,
+    is_pr_url,
+    platform_for_url,
+)
 from .reviewers import make_reviewer, resolve_reviewer
 
 app = typer.Typer(
@@ -36,9 +42,9 @@ SUBCOMMANDS = {
 
 
 REVIEW_HELP = """\
-Usage: prc review [repo] [branch] [OPTIONS]
+Usage: prc review [repo|pr-url] [branch] [OPTIONS]
 
-Review a local git branch with the configured LLM council.
+Review a local git branch or remote pull request URL with the configured LLM council.
 
 Options:
   --base BASE                 Target branch/ref to compare against.
@@ -46,6 +52,8 @@ Options:
   --chairman MODEL            Override config chair.
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
+  --dry-run                   Show review output without posting; default.
+  --post                      Post review as a PR comment without printing it.
   --disclose                  Append reviewer letter -> model name mapping.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
@@ -83,9 +91,9 @@ def root(
 @app.command("review", help=SUBCOMMANDS["review"])
 def review(
     repo: Annotated[
-        Path,
-        typer.Argument(help="Path to local git repo"),
-    ] = Path("."),
+        str,
+        typer.Argument(help="Path to local git repo or pull request URL"),
+    ] = ".",
     branch: Annotated[
         Optional[str],
         typer.Argument(help="Branch to review; defaults to current branch"),
@@ -118,6 +126,20 @@ def review(
             help="Append reviewer letter to model name mapping to final output",
         ),
     ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Show review output without posting; default for PR URLs",
+        ),
+    ] = False,
+    post: Annotated[
+        bool,
+        typer.Option(
+            "--post",
+            help="Post review as a PR comment without printing it",
+        ),
+    ] = False,
     config_path: Annotated[
         Optional[Path], typer.Option("--config", help="Explicit config path")
     ] = None,
@@ -135,6 +157,29 @@ def review(
         typer.Option("-v", "--verbose", help="Detailed progress to stderr"),
     ] = False,
 ) -> None:
+    if dry_run and post:
+        print("prc: --dry-run and --post cannot be used together", file=sys.stderr)
+        raise typer.Exit(2)
+
+    remote_url = repo if is_pr_url(repo) else None
+    if remote_url is not None and (branch is not None or base is not None):
+        print(
+            "prc: PR URL reviews do not support branch or --base arguments",
+            file=sys.stderr,
+        )
+        raise typer.Exit(2)
+    if remote_url is None and post:
+        print("prc: --post requires a pull request URL", file=sys.stderr)
+        raise typer.Exit(2)
+
+    platform = None
+    if remote_url is not None:
+        try:
+            platform = platform_for_url(remote_url)
+        except UnsupportedPRHost as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(4)
+
     try:
         c = cfg.load(explicit=config_path)
     except cfg.ConfigMissing as e:
@@ -158,21 +203,32 @@ def review(
     chair_model = chairman or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
 
-    repo = repo.resolve()
-    if branch is None:
+    if remote_url is not None:
         try:
-            branch = current_branch(repo)
+            assert platform is not None
+            diff = platform.fetch_diff(remote_url, max_bytes=max_diff_bytes)
+        except NotImplementedError as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(4)
+        except PRPlatformError as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(4)
+    else:
+        repo_path = Path(repo).resolve()
+        if branch is None:
+            try:
+                branch = current_branch(repo_path)
+            except GitError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+
+        try:
+            diff = capture_diff(
+                repo_path, branch, base, max_bytes=max_diff_bytes
+            )
         except GitError as e:
             print(f"prc: {e}", file=sys.stderr)
             raise typer.Exit(4)
-
-    try:
-        diff = capture_diff(
-            repo, branch, base, max_bytes=max_diff_bytes
-        )
-    except GitError as e:
-        print(f"prc: {e}", file=sys.stderr)
-        raise typer.Exit(4)
 
     if verbose:
         print(
@@ -193,61 +249,15 @@ def review(
         )
         raise typer.Exit(0)
 
-    try:
-        chair = make_reviewer(chair_model, c.providers, c.api_keys)
-        reviewers = []
-        chair_seat_taken = False
-        for m in council_models:
-            if (
-                on_council_flag
-                and m == chair_model
-                and not chair_seat_taken
-            ):
-                reviewers.append(chair)
-                chair_seat_taken = True
-            else:
-                reviewers.append(make_reviewer(m, c.providers, c.api_keys))
-        if on_council_flag and not chair_seat_taken:
-            reviewers.append(chair)
-    except (ValueError, RuntimeError) as e:
-        print(f"prc: {e}", file=sys.stderr)
-        raise typer.Exit(5)
-
-    if verbose:
-        print(
-            f"prc: chair={chair_model} council=["
-            f"{', '.join(r.model for r in reviewers)}]",
-            file=sys.stderr,
-        )
-
-    try:
-        prompts = prompt_cfg.load_prompts()
-    except ValueError as e:
-        print(f"prc: config error: {e}", file=sys.stderr)
-        raise typer.Exit(5)
-
-    ctx = DiffOnlyContext(diff=diff.diff)
-    final: str | None = None
-    chair_error: BaseException | None = None
-    with _review_progress(enabled=not verbose) as progress:
-        progress(PROGRESS_COUNCIL_START)
-        outcome = run_council(
-            reviewers,
-            ctx,
-            timeout=timeout,
-            verbose=verbose,
-            progress=_council_progress(progress),
-            prompts=prompts,
-        )
-
-        if len(outcome.r1) >= 2:
-            progress(PROGRESS_CHAIR)
-            try:
-                final = synthesize(
-                    chair, outcome, ctx, timeout=timeout, prompts=prompts
-                )
-            except Exception as e:
-                chair_error = e
+    final, outcome, chair_error = _review_diff(
+        c=c,
+        council_models=council_models,
+        chair_model=chair_model,
+        on_council_flag=on_council_flag,
+        diff=diff,
+        timeout=timeout,
+        verbose=verbose,
+    )
 
     if len(outcome.r1) < 2:
         print(
@@ -274,6 +284,21 @@ def review(
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
     if disclose:
         final = _append_reviewer_identities(final, outcome)
+    if post and remote_url is not None and platform is not None:
+        with _review_progress(enabled=not verbose) as progress:
+            progress(PROGRESS_POST)
+            try:
+                platform.post_comment(remote_url, final)
+            except NotImplementedError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+            except PRPlatformError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+        if verbose:
+            print("prc: review comment posted", file=sys.stderr)
+        return
+
     print(final)
 
 
@@ -388,6 +413,76 @@ PROGRESS_COUNCIL_START = "prc: council starting..."
 PROGRESS_R1 = "prc: council reviewing diff..."
 PROGRESS_R2 = "prc: council reviewing reviewers..."
 PROGRESS_CHAIR = "prc: chair writing verdict..."
+PROGRESS_POST = "prc: posting review comment..."
+
+
+def _review_diff(
+    *,
+    c: cfg.Config,
+    council_models: list[str],
+    chair_model: str,
+    on_council_flag: bool,
+    diff: DiffResult,
+    timeout: float,
+    verbose: bool,
+) -> tuple[str | None, CouncilOutcome, BaseException | None]:
+    try:
+        chair = make_reviewer(chair_model, c.providers, c.api_keys)
+        reviewers = []
+        chair_seat_taken = False
+        for m in council_models:
+            if (
+                on_council_flag
+                and m == chair_model
+                and not chair_seat_taken
+            ):
+                reviewers.append(chair)
+                chair_seat_taken = True
+            else:
+                reviewers.append(make_reviewer(m, c.providers, c.api_keys))
+        if on_council_flag and not chair_seat_taken:
+            reviewers.append(chair)
+    except (ValueError, RuntimeError) as e:
+        print(f"prc: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
+    if verbose:
+        print(
+            f"prc: chair={chair_model} council=["
+            f"{', '.join(r.model for r in reviewers)}]",
+            file=sys.stderr,
+        )
+
+    try:
+        prompts = prompt_cfg.load_prompts()
+    except ValueError as e:
+        print(f"prc: config error: {e}", file=sys.stderr)
+        raise typer.Exit(5)
+
+    ctx = DiffOnlyContext(diff=diff.diff)
+    final: str | None = None
+    chair_error: BaseException | None = None
+    with _review_progress(enabled=not verbose) as progress:
+        progress(PROGRESS_COUNCIL_START)
+        outcome = run_council(
+            reviewers,
+            ctx,
+            timeout=timeout,
+            verbose=verbose,
+            progress=_council_progress(progress),
+            prompts=prompts,
+        )
+
+        if len(outcome.r1) >= 2:
+            progress(PROGRESS_CHAIR)
+            try:
+                final = synthesize(
+                    chair, outcome, ctx, timeout=timeout, prompts=prompts
+                )
+            except Exception as e:
+                chair_error = e
+
+    return final, outcome, chair_error
 
 
 @contextmanager

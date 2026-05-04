@@ -201,6 +201,133 @@ def test_cli_disclose_appends_reviewer_identities(
     )
 
 
+def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
+    class FakePlatform:
+        def fetch_diff(self, url, max_bytes):
+            assert url == "https://github.com/hfoffani/pr-review-council/pull/33"
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def post_comment(self, url, body):
+            raise AssertionError("dry run should not post")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("local git diff should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+
+    def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
+        assert ctx.render() == "<diff>\nremote diff\n</diff>"
+        return CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        )
+
+    monkeypatch.setattr(cli, "run_council", run_council)
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "remote final")
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == "remote final\n"
+
+
+def test_cli_remote_pr_post_suppresses_stdout(monkeypatch) -> None:
+    posted: dict[str, str] = {}
+
+    class FakePlatform:
+        def fetch_diff(self, url, max_bytes):
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def post_comment(self, url, body):
+            posted["url"] = url
+            posted["body"] = body
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        ),
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "remote final")
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33", "--post"],
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == ""
+    assert posted == {
+        "url": "https://github.com/hfoffani/pr-review-council/pull/33",
+        "body": "remote final",
+    }
+
+
+def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "feature",
+            "--base",
+            "main",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "do not support branch or --base" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--dry-run",
+            "--post",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "cannot be used together" in res.stderr
+
+
 def test_cli_uses_custom_prompts_file(
     tmp_path: Path, monkeypatch
 ) -> None:
