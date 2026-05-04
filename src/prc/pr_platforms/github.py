@@ -9,13 +9,17 @@ from prc.git_ops import DiffResult
 
 from .base import PRPlatformError, PullRequestPlatform
 
+GH = "gh"
+
 
 class GitHubPullRequestPlatform(PullRequestPlatform):
+    supports_posting = True
+
     def fetch_diff(self, url: str, *, max_bytes: int) -> DiffResult:
         parsed = _parse_github_pr_url(url)
         _ensure_gh(url)
         diff, truncated, bytes_total = _truncate_diff(
-            _run_gh(["gh", "pr", "diff", url], url),
+            _run_gh([GH, "pr", "diff", url], url),
             max_bytes=max_bytes,
         )
         files_total = _count_diff_files(diff)
@@ -32,7 +36,7 @@ class GitHubPullRequestPlatform(PullRequestPlatform):
     def post_comment(self, url: str, body: str) -> None:
         _parse_github_pr_url(url)
         _ensure_gh(url)
-        _run_gh(["gh", "pr", "comment", url, "--body", body], url)
+        _run_gh([GH, "pr", "comment", url, "--body", body], url)
 
 
 @dataclass(frozen=True)
@@ -54,13 +58,13 @@ def _parse_github_pr_url(url: str) -> ParsedGitHubPR:
 
 
 def _ensure_gh(url: str) -> None:
-    if shutil.which("gh") is None:
+    if shutil.which(GH) is None:
         raise PRPlatformError(
             "GitHub CLI not found; install gh from https://cli.github.com/"
         )
     host = _host(url)
     auth = subprocess.run(
-        ["gh", "auth", "status", "--hostname", host],
+        [GH, "auth", "status", "--hostname", host],
         text=True,
         capture_output=True,
     )

@@ -53,7 +53,7 @@ Options:
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
   --dry-run                   Show review output without posting; default.
-  --post                      Post review as a PR comment without printing it.
+  --post                      Post review as a PR comment; requires a supported PR URL.
   --disclose                  Append reviewer letter -> model name mapping.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
@@ -174,12 +174,22 @@ def review(
     if remote_url is None and post:
         print("prc: --post requires a pull request URL", file=sys.stderr)
         raise typer.Exit(2)
+    dry_run_mode = not post
 
     platform = None
     if remote_url is not None:
         try:
             platform = platform_for_url(remote_url)
+            if post and not platform.supports_posting:
+                print(
+                    "prc: --post is not supported for this pull request host",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(4)
         except UnsupportedPRHost as e:
+            print(f"prc: {e}", file=sys.stderr)
+            raise typer.Exit(4)
+        except NotImplementedError as e:
             print(f"prc: {e}", file=sys.stderr)
             raise typer.Exit(4)
 
@@ -305,7 +315,8 @@ def review(
             print("prc: review comment posted", file=sys.stderr)
         return
 
-    print(final)
+    if dry_run_mode:
+        print(final)
 
 
 @app.command("config", help=SUBCOMMANDS["config"])

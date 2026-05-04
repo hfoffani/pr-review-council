@@ -234,7 +234,7 @@ prc review [repo|pr-url] [branch]
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
     [--dry-run]                         # print review without posting
-    [--post]                            # post review as a PR comment
+    [--post]                            # post review; requires supported PR URL
     [--disclose]                        # append reviewer identity mapping
     [--config PATH]                     # explicit config file
     [--max-diff-bytes N]                # truncation cap, default 600000
