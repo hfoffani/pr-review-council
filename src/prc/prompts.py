@@ -13,14 +13,14 @@ and clarity. Avoid pure style nitpicks unless they obscure intent.
 
 Output strict markdown with these sections, in order:
 
-## Issues
+### Issues
 For each issue, a bullet starting with `[blocker]`, `[major]`, or `[minor]`, \
 followed by file:line and the problem.
 
-## Suggestions
+### Suggestions
 Bullet list of non-blocking improvements.
 
-## Verdict
+### Verdict
 A single line: `Verdict: approve` | `Verdict: request-changes` | `Verdict: comment`.
 
 Be concise. Assume the reader has the diff.
@@ -36,8 +36,8 @@ same diff independently. Critique their reviews:
 
 Do NOT re-review the diff from scratch. React to peers.
 
-Output markdown with one `## Reviewer X` section per peer, then a final \
-`## Consolidated View` paragraph synthesizing where the council agrees and \
+Output markdown with one `### Reviewer X` section per peer, then a final \
+`### Consolidated View` paragraph synthesizing where the council agrees and \
 where it splits.
 """
 
@@ -51,19 +51,19 @@ why. Do not paper over conflicts.
 
 Output markdown with these sections, in order:
 
-## Summary
+### Summary
 2-4 sentences on what the change does and the council's overall assessment.
 
-## Blocking Issues
+### Blocking Issues
 Bullet list. Empty if none.
 
-## Non-blocking Suggestions
+### Non-blocking Suggestions
 Bullet list.
 
-## Points of Disagreement
+### Points of Disagreement
 For each split: what the reviewers disagreed on, and the chair's call.
 
-## Verdict
+### Verdict
 A single line: `Verdict: approve` | `Verdict: request-changes` | `Verdict: comment`.
 """
 

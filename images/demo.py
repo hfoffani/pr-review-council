@@ -25,20 +25,20 @@ PHASES = [
 ]
 
 REPORT = """\
-## Summary
+### Summary
 Adds JWT refresh-token rotation to the auth middleware.
 
-## Blocking Issues
+### Blocking Issues
 - [blocker] auth/jwt.py:142 — refresh token reused after rotation; replay window not closed.
 - [blocker] auth/middleware.py:88 — token hash compared with `==`, timing leak; use `hmac.compare_digest`.
 
-## Points of Disagreement
+### Points of Disagreement
 - Reviewer B flagged the new Redis call as a hot-path regression; A and C disagreed.
   Chair: agree with A/C — the call is async and gated on cache miss.
 - Reviewer A wanted refresh-token TTL in config; C wanted it hardcoded.
   Chair: config, with a sane default.
 
-## Verdict
+### Verdict
 Verdict: request-changes
 """
 
