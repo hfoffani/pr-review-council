@@ -325,7 +325,7 @@ def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
     )
 
     assert res.exit_code == 2
-    assert "cannot be used together" in res.stderr
+    assert "choose either --dry-run or --post" in res.stderr
 
 
 def test_cli_uses_custom_prompts_file(

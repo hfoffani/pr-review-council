@@ -25,7 +25,7 @@ from .pr_platforms import (
     is_pr_url,
     platform_for_url,
 )
-from .reviewers import make_reviewer, resolve_reviewer
+from .reviewers import Reviewer, make_reviewer, resolve_reviewer
 
 app = typer.Typer(
     add_completion=False,
@@ -158,7 +158,10 @@ def review(
     ] = False,
 ) -> None:
     if dry_run and post:
-        print("prc: --dry-run and --post cannot be used together", file=sys.stderr)
+        print(
+            "prc: choose either --dry-run or --post, not both",
+            file=sys.stderr,
+        )
         raise typer.Exit(2)
 
     remote_url = repo if is_pr_url(repo) else None
@@ -284,7 +287,10 @@ def review(
         print(f"prc: chair {chair_model} ok", file=sys.stderr)
     if disclose:
         final = _append_reviewer_identities(final, outcome)
-    if post and remote_url is not None and platform is not None:
+    if post:
+        if remote_url is None or platform is None:
+            print("prc: --post requires a supported pull request URL", file=sys.stderr)
+            raise typer.Exit(2)
         with _review_progress(enabled=not verbose) as progress:
             progress(PROGRESS_POST)
             try:
@@ -428,7 +434,7 @@ def _review_diff(
 ) -> tuple[str | None, CouncilOutcome, BaseException | None]:
     try:
         chair = make_reviewer(chair_model, c.providers, c.api_keys)
-        reviewers = []
+        reviewers: list[Reviewer] = []
         chair_seat_taken = False
         for m in council_models:
             if (

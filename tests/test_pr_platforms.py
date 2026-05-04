@@ -85,6 +85,21 @@ def test_github_missing_cli_has_install_message(monkeypatch) -> None:
         )
 
 
+def test_github_invalid_pr_url_is_rejected_before_cli_checks(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "prc.pr_platforms.github.shutil.which",
+        lambda name: (_ for _ in ()).throw(
+            AssertionError("gh lookup should not run")
+        ),
+    )
+
+    with pytest.raises(PRPlatformError, match="invalid GitHub pull request URL"):
+        GitHubPullRequestPlatform().fetch_diff(
+            "https://github.com/hfoffani/pr-review-council/issues/33",
+            max_bytes=600_000,
+        )
+
+
 def test_github_unauthenticated_cli_has_login_message(monkeypatch) -> None:
     monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
     monkeypatch.setattr(
@@ -99,6 +114,35 @@ def test_github_unauthenticated_cli_has_login_message(monkeypatch) -> None:
             "https://github.com/hfoffani/pr-review-council/pull/33",
             max_bytes=600_000,
         )
+
+
+def test_github_diff_truncation_preserves_lines_and_reports_original_bytes(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
+
+    def run(cmd, text, capture_output):
+        if cmd[:3] == ["gh", "auth", "status"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(
+            returncode=0,
+            stdout="diff --git a/file.py b/file.py\n+áéíóú\n+second\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
+
+    diff = GitHubPullRequestPlatform().fetch_diff(
+        "https://github.com/hfoffani/pr-review-council/pull/33",
+        max_bytes=35,
+    )
+
+    assert diff.truncated is True
+    assert diff.diff == (
+        "diff --git a/file.py b/file.py\n\n"
+        f"TRUNCATED: remote PR diff capped at 35 bytes "
+        f"(original {diff.bytes_total} bytes).\n"
+    )
 
 
 def test_platform_stubs_and_unsupported_hosts() -> None:

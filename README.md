@@ -211,9 +211,11 @@ prc review --post https://github.com/hfoffani/pr-review-council/pull/33
 ```
 
 Remote PR reviews default to dry-run mode: the report is printed and no
-comment is posted. Use `--post` to add the generated report as a normal PR
-comment instead; in that mode `prc` shows progress/errors on stderr and does
-not print the review body. `--dry-run` and `--post` are mutually exclusive.
+comment is posted. `--dry-run` is an explicit spelling of that default. Use
+`--post` only with a supported pull request URL to add the generated report as
+a normal PR comment instead; in that mode `prc` shows progress/errors on stderr
+and does not print the review body. `--dry-run` and `--post` are mutually
+exclusive.
 
 Bitbucket and GitLab URLs are detected, but support is not implemented yet.
 Other hosts are rejected with a clear unsupported-host error.
