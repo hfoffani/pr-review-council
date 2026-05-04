@@ -429,6 +429,19 @@ def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
     assert res.exit_code == 2
     assert "choose either --dry-run or --post" in res.stderr
 
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--post",
+            "--dry-run",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "choose either --dry-run or --post" in res.stderr
+
 
 def test_cli_uses_custom_prompts_file(
     tmp_path: Path, monkeypatch

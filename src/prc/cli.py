@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
+import click
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -90,6 +91,7 @@ def root(
 
 @app.command("review", help=SUBCOMMANDS["review"])
 def review(
+    ctx: typer.Context,
     repo: Annotated[
         str,
         typer.Argument(help="Path to local git repo or pull request URL"),
@@ -132,7 +134,7 @@ def review(
             "--dry-run",
             help="Show review output without posting; default for PR URLs",
         ),
-    ] = False,
+    ] = True,
     post: Annotated[
         bool,
         typer.Option(
@@ -157,7 +159,11 @@ def review(
         typer.Option("-v", "--verbose", help="Detailed progress to stderr"),
     ] = False,
 ) -> None:
-    if dry_run and post:
+    dry_run_explicit = (
+        ctx.get_parameter_source("dry_run")
+        == click.core.ParameterSource.COMMANDLINE
+    )
+    if dry_run_explicit and dry_run and post:
         print(
             "prc: choose either --dry-run or --post, not both",
             file=sys.stderr,
@@ -177,7 +183,7 @@ def review(
     if remote_url is None and post:
         print("prc: --post requires a pull request URL", file=sys.stderr)
         raise typer.Exit(2)
-    dry_run_mode = not post
+    dry_run_mode = dry_run and not post
 
     platform = None
     if remote_url is not None:
