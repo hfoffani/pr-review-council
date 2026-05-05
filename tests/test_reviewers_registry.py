@@ -106,6 +106,19 @@ def test_missing_key_raises(fake_family) -> None:
         make_reviewer("x-1", providers, {})
 
 
+def test_provider_without_api_key_is_allowed(fake_family) -> None:
+    providers = {
+        "codex": {
+            "family": "fake",
+            "match": ["codex/*"],
+            "strip_prefix": "codex/",
+        }
+    }
+    make_reviewer("codex/gpt-5.1", providers, {})
+    [call] = fake_family.instances
+    assert call == {"model": "gpt-5.1"}
+
+
 def test_openai_glob_does_not_swallow_openrouter(fake_family) -> None:
     """o[0-9]* matches o1/o3/o4-mini but not openrouter/..."""
     providers = {

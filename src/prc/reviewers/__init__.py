@@ -9,6 +9,7 @@ from .base import Review, Reviewer
 
 # Trigger family registration. Imports are intentionally side-effecting.
 from . import anthropic as _anthropic  # noqa: F401
+from . import cli as _cli  # noqa: F401
 from . import google as _google  # noqa: F401
 from . import openai_compat as _openai_compat  # noqa: F401
 
@@ -38,7 +39,7 @@ class ResolvedReviewer:
     api_model: str
     provider: str
     family: str
-    api_key: str
+    api_key: str | None
     api_key_source: str
     kwargs: dict[str, Any]
 
@@ -96,8 +97,12 @@ def resolve_reviewer(
             env_var = _env_var_for(prov_name)
             env_key = _env_key_for(prov_name)
             config_key = _interp(prov.get("api_key"), scope)
-            api_key = env_key or config_key
-            if not api_key:
+            api_key: str | None = None
+            api_key_source = "not required"
+            if "api_key" in prov:
+                api_key = env_key or config_key
+                api_key_source = f"env:{env_var}" if env_key else "config"
+            if "api_key" in prov and not api_key:
                 raise RuntimeError(
                     f"no api_key resolved for provider {prov_name!r} "
                     f"(model={model}); set env var or fill config"
@@ -106,7 +111,9 @@ def resolve_reviewer(
             prefix = prov.get("strip_prefix")
             if prefix and api_model.startswith(prefix):
                 api_model = api_model[len(prefix):]
-            kwargs: dict[str, Any] = {"model": api_model, "api_key": api_key}
+            kwargs: dict[str, Any] = {"model": api_model}
+            if api_key is not None:
+                kwargs["api_key"] = api_key
             if "base_url" in prov:
                 kwargs["base_url"] = _interp(prov["base_url"], scope)
             return ResolvedReviewer(
@@ -115,7 +122,7 @@ def resolve_reviewer(
                 provider=prov_name,
                 family=family,
                 api_key=api_key,
-                api_key_source=f"env:{env_var}" if env_key else "config",
+                api_key_source=api_key_source,
                 kwargs=kwargs,
             )
     raise ValueError(f"no provider matched model {model!r}")

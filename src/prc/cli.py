@@ -614,7 +614,10 @@ def _print_resolution(
         f"{indent}{role}: provider={resolved.provider} "
         f"family={resolved.family} api_model={resolved.api_model}"
     )
-    print(f"{indent}api_key: set ({resolved.api_key_source})")
+    if resolved.api_key is None:
+        print(f"{indent}api_key: not required")
+    else:
+        print(f"{indent}api_key: set ({resolved.api_key_source})")
 
 
 def _edit_config(path: Path) -> None:

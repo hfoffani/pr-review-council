@@ -68,6 +68,16 @@ base_url     = "https://openrouter.ai/api/v1"
 api_key      = "${api_keys.openrouter}"
 match        = ["openrouter/*"]
 strip_prefix = "openrouter/"
+
+[providers.codex]
+family       = "codex"
+match        = ["codex/*"]
+strip_prefix = "codex/"
+
+[providers.claude-cli]
+family       = "claude"
+match        = ["claude/*"]
+strip_prefix = "claude/"
 """
 
 
