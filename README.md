@@ -173,6 +173,8 @@ Then add `deepseek-v3` (or whichever id) to `[council].models`.
 
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`, and `PRC_API_KEY_<NAME>` (uppercased provider name) take precedence over the corresponding config value, so secrets can stay off disk.
 
+`PRC_BITBUCKET_USER` (Atlassian email) and `PRC_BITBUCKET_TOKEN` (API token) authenticate BitBucket Cloud PR access via HTTP Basic auth. The token must have **Repositories: Read** (`read:repository:bitbucket`), **Pull requests: Read** (`read:pullrequest:bitbucket`), and **Pull requests: Write** (`write:pullrequest:bitbucket`) scopes.
+
 ### ⚠️ Never commit a project-local `prc.toml`
 
 API keys live in this file. The included `.gitignore` excludes `prc.toml` and `.prc.toml`. If you copy the config into another repo, add it to that repo's `.gitignore` first.
@@ -202,12 +204,26 @@ current git branch.
 
 `prc review` can also review a pull request URL. GitHub pull requests are
 supported through the GitHub CLI (`gh`); install it and run `gh auth login`
-before reviewing remote PRs.
+before reviewing remote PRs. BitBucket Cloud pull requests are supported
+through the BitBucket Cloud REST API directly (no extra CLI required).
 
 ```bash
 prc review https://github.com/hfoffani/pr-review-council/pull/33
 prc review --dry-run https://github.com/hfoffani/pr-review-council/pull/33
 prc review --post https://github.com/hfoffani/pr-review-council/pull/33
+```
+
+For BitBucket Cloud, export `PRC_BITBUCKET_USER` (Atlassian email) and
+`PRC_BITBUCKET_TOKEN` (API token with **Repositories: Read**,
+**Pull requests: Read**, and **Pull requests: Write** scopes) before
+reviewing. URLs may include a
+trailer such as `/overview`, `/diff`, or `/commits` — these are accepted
+and ignored.
+
+```bash
+prc review https://bitbucket.org/<workspace>/<repo>/pull-requests/42
+prc review --dry-run https://bitbucket.org/<workspace>/<repo>/pull-requests/42/overview
+prc review --post https://bitbucket.org/<workspace>/<repo>/pull-requests/42
 ```
 
 Remote PR reviews default to dry-run mode: the report is printed and no
@@ -217,7 +233,7 @@ a normal PR comment instead; in that mode `prc` shows progress/errors on stderr
 and does not print the review body. `--dry-run` and `--post` are mutually
 exclusive.
 
-Bitbucket and GitLab URLs are detected, but support is not implemented yet.
+GitLab URLs are detected, but support is not implemented yet.
 Other hosts are rejected with a clear unsupported-host error.
 
 CLI:
