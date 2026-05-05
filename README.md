@@ -173,7 +173,7 @@ Then add `deepseek-v3` (or whichever id) to `[council].models`.
 
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`, and `PRC_API_KEY_<NAME>` (uppercased provider name) take precedence over the corresponding config value, so secrets can stay off disk.
 
-`PRC_BITBUCKET_USER` (Atlassian email) and `PRC_BITBUCKET_TOKEN` (API token) authenticate BitBucket Cloud PR access via HTTP Basic auth. The token must have **Pull requests: Read** and **Pull requests: Write** scopes.
+`PRC_BITBUCKET_USER` (Atlassian email) and `PRC_BITBUCKET_TOKEN` (API token) authenticate BitBucket Cloud PR access via HTTP Basic auth. The token must have **Repositories: Read** (`read:repository:bitbucket`), **Pull requests: Read** (`read:pullrequest:bitbucket`), and **Pull requests: Write** (`write:pullrequest:bitbucket`) scopes.
 
 ### ⚠️ Never commit a project-local `prc.toml`
 
@@ -214,8 +214,9 @@ prc review --post https://github.com/hfoffani/pr-review-council/pull/33
 ```
 
 For BitBucket Cloud, export `PRC_BITBUCKET_USER` (Atlassian email) and
-`PRC_BITBUCKET_TOKEN` (API token with **Pull requests: Read** and
-**Pull requests: Write** scopes) before reviewing. URLs may include a
+`PRC_BITBUCKET_TOKEN` (API token with **Repositories: Read**,
+**Pull requests: Read**, and **Pull requests: Write** scopes) before
+reviewing. URLs may include a
 trailer such as `/overview`, `/diff`, or `/commits` — these are accepted
 and ignored.
 

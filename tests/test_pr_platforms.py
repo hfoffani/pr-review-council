@@ -350,7 +350,7 @@ def test_bitbucket_401_maps_to_auth_error(monkeypatch) -> None:
 def test_bitbucket_403_mentions_token_scope(monkeypatch) -> None:
     _set_bb_env(monkeypatch)
     _capture_urlopen(monkeypatch, _http_error(403, b"forbidden"))
-    with pytest.raises(PRPlatformError, match="403.*PR read/write scope"):
+    with pytest.raises(PRPlatformError, match="403.*Repositories: Read"):
         BitBucketPullRequestPlatform().fetch_diff(_BB_PR_URL, max_bytes=600_000)
 
 

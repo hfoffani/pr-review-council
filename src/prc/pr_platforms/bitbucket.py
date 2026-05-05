@@ -163,7 +163,8 @@ def _raise_for_http_error(e: urllib.error.HTTPError) -> None:
         ) from e
     if status == 403:
         raise PRPlatformError(
-            "BitBucket forbidden (403); token missing PR read/write scope"
+            "BitBucket forbidden (403); token missing required scopes "
+            "(needs Repositories: Read + Pull requests: Read/Write)"
         ) from e
     if status == 404:
         raise PRPlatformError(
