@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from .base import PRPlatformError, PullRequestPlatform, UnsupportedPRHost
+from .base import (
+    PRPlatformError,
+    PullRequestMetadata,
+    PullRequestPlatform,
+    UnsupportedPRHost,
+)
 from .bitbucket import BitBucketPullRequestPlatform
 from .github import GitHubPullRequestPlatform
 from .gitlab import GitLabPullRequestPlatform
@@ -27,6 +32,7 @@ def platform_for_url(url: str) -> PullRequestPlatform:
 
 __all__ = [
     "PRPlatformError",
+    "PullRequestMetadata",
     "PullRequestPlatform",
     "UnsupportedPRHost",
     "is_pr_url",

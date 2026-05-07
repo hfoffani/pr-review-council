@@ -19,6 +19,13 @@ class RemotePullRequest:
     host: str
 
 
+@dataclass(frozen=True)
+class PullRequestMetadata:
+    title: str | None
+    description: str | None
+    url: str | None
+
+
 class PullRequestPlatform:
     """Adapter for fetching and optionally commenting on remote pull requests."""
 
@@ -27,6 +34,22 @@ class PullRequestPlatform:
     def fetch_diff(self, url: str, *, max_bytes: int) -> DiffResult:
         """Return a reviewable diff for the pull request URL."""
         raise NotImplementedError
+
+    def fetch_metadata(self, url: str) -> PullRequestMetadata | None:
+        """Return pull request title/description when the host supports it."""
+        try:
+            return self._fetch_metadata(url)
+        except NotImplementedError:
+            raise
+        except PRPlatformError:
+            raise
+        except Exception as e:
+            raise PRPlatformError(
+                f"failed to fetch pull request metadata: {e}"
+            ) from e
+
+    def _fetch_metadata(self, url: str) -> PullRequestMetadata | None:
+        return None
 
     def post_comment(self, url: str, body: str) -> None:
         """Post a generated review body as a normal pull request comment."""

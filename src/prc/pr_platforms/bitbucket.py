@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from prc.git_ops import DiffResult
 
 from ._diff_utils import count_diff_files, truncate_diff
-from .base import PRPlatformError, PullRequestPlatform
+from .base import PRPlatformError, PullRequestMetadata, PullRequestPlatform
 
 ENV_USER = "PRC_BITBUCKET_USER"
 ENV_TOKEN = "PRC_BITBUCKET_TOKEN"
@@ -55,6 +55,20 @@ class BitBucketPullRequestPlatform(PullRequestPlatform):
             user,
             token,
             expected_status=201,
+        )
+
+    def _fetch_metadata(self, url: str) -> PullRequestMetadata:
+        parsed = _parse_bitbucket_pr_url(url)
+        user, token = _require_creds()
+        api_url = (
+            f"{API_BASE}/repositories/{parsed.workspace}/{parsed.repo}"
+            f"/pullrequests/{parsed.number}"
+        )
+        data = _http_get_json(api_url, user, token)
+        return PullRequestMetadata(
+            title=_required_json_string(data, "title"),
+            description=_optional_json_string(data, "description"),
+            url=url,
         )
 
 
@@ -103,6 +117,25 @@ def _http_get_text(url: str, user: str, token: str) -> str:
         method="GET",
     )
     return _read_response_text(req)
+
+
+def _http_get_json(url: str, user: str, token: str) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": _basic_auth_header(user, token),
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    raw = _read_response_text(req)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise PRPlatformError("BitBucket returned invalid PR metadata JSON") from e
+    if not isinstance(data, dict):
+        raise PRPlatformError("BitBucket returned invalid PR metadata JSON")
+    return data
 
 
 def _http_post_json(
@@ -187,3 +220,23 @@ def _read_snippet(resp_or_err) -> str:
     if isinstance(body, bytes):
         body = body.decode("utf-8", errors="replace")
     return body.strip()[:200]
+
+
+def _required_json_string(data: dict, key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        raise PRPlatformError(
+            f"BitBucket PR metadata field {key!r} must be a string"
+        )
+    return value
+
+
+def _optional_json_string(data: dict, key: str) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PRPlatformError(
+            f"BitBucket PR metadata field {key!r} must be a string or null"
+        )
+    return value

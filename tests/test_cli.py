@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from prc import cli
 from prc.council import CouncilOutcome
 from prc.git_ops import DiffResult, GitError
+from prc.pr_platforms.base import PullRequestMetadata
 
 
 runner = CliRunner()
@@ -215,6 +216,14 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
                 bytes_total=11,
             )
 
+        def fetch_metadata(self, url):
+            assert url == "https://github.com/hfoffani/pr-review-council/pull/33"
+            return PullRequestMetadata(
+                title="Remote title",
+                description="Remote description",
+                url=url,
+            )
+
         def post_comment(self, url, body):
             raise AssertionError("dry run should not post")
 
@@ -234,7 +243,18 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
     )
 
     def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
-        assert ctx.render() == "<diff>\nremote diff\n</diff>"
+        assert ctx.render() == (
+            "<pull_request>\n"
+            "<title>Remote title</title>\n"
+            "<description>\n"
+            "Remote description\n"
+            "</description>\n"
+            "<url>https://github.com/hfoffani/pr-review-council/pull/33</url>\n"
+            "</pull_request>\n\n"
+            "<diff>\n"
+            "remote diff\n"
+            "</diff>"
+        )
         return CouncilOutcome(
             r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
         )
@@ -266,6 +286,13 @@ def test_cli_remote_pr_post_suppresses_stdout(monkeypatch) -> None:
                 files_included=1,
                 truncated=False,
                 bytes_total=11,
+            )
+
+        def fetch_metadata(self, url):
+            return PullRequestMetadata(
+                title="Remote title",
+                description="Remote description",
+                url=url,
             )
 
         def post_comment(self, url, body):
@@ -324,6 +351,41 @@ def test_cli_remote_pr_post_requires_platform_support(monkeypatch) -> None:
 
     assert res.exit_code == 4
     assert "--post is not supported" in res.stderr
+
+
+def test_cli_remote_pr_metadata_not_implemented_exits_4(monkeypatch) -> None:
+    class FakePlatform:
+        def fetch_diff(self, url, max_bytes):
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def fetch_metadata(self, url):
+            raise NotImplementedError("metadata support is coming soon")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("review should not start")
+        ),
+    )
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 4
+    assert "metadata support is coming soon" in res.stderr
 
 
 def test_cli_platform_construction_not_implemented_is_reported(monkeypatch) -> None:
