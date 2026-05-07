@@ -17,11 +17,12 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from . import config as cfg
 from . import prompts as prompt_cfg
 from .chairman import synthesize
-from .context import DiffOnlyContext
+from .context import DiffOnlyContext, PullRequestContext
 from .council import CouncilOutcome, CouncilPhase, run_council
 from .git_ops import DiffResult, GitError, capture_diff, current_branch
 from .pr_platforms import (
     PRPlatformError,
+    PullRequestMetadata,
     UnsupportedPRHost,
     is_pr_url,
     platform_for_url,
@@ -226,6 +227,7 @@ def review(
     on_council_flag = chair_on_council or c.chair_on_council
 
     final: str | None = None
+    metadata: PullRequestMetadata | None = None
 
     with _review_progress(enabled=not verbose) as progress:
         progress(PROGRESS_DIFF)
@@ -236,6 +238,14 @@ def review(
                 raise typer.Exit(4)
             try:
                 diff = platform.fetch_diff(remote_url, max_bytes=max_diff_bytes)
+            except NotImplementedError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+            except PRPlatformError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+            try:
+                metadata = platform.fetch_metadata(remote_url)
             except NotImplementedError as e:
                 print(f"prc: {e}", file=sys.stderr)
                 raise typer.Exit(4)
@@ -284,6 +294,7 @@ def review(
             chair_model=chair_model,
             on_council_flag=on_council_flag,
             diff=diff,
+            metadata=metadata,
             timeout=timeout,
             verbose=verbose,
             progress=progress,
@@ -459,6 +470,7 @@ def _review_diff(
     timeout: float,
     verbose: bool,
     progress: Callable[[str], None],
+    metadata: PullRequestMetadata | None = None,
 ) -> tuple[str | None, CouncilOutcome, BaseException | None]:
     try:
         chair = make_reviewer(chair_model, c.providers, c.api_keys)
@@ -493,7 +505,11 @@ def _review_diff(
         print(f"prc: config error: {e}", file=sys.stderr)
         raise typer.Exit(5)
 
-    ctx = DiffOnlyContext(diff=diff.diff)
+    ctx = (
+        PullRequestContext(diff=diff.diff, metadata=metadata)
+        if metadata is not None
+        else DiffOnlyContext(diff=diff.diff)
+    )
     final: str | None = None
     chair_error: BaseException | None = None
     progress(PROGRESS_COUNCIL_START)

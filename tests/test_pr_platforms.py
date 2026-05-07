@@ -79,6 +79,65 @@ def test_github_post_comment_uses_gh_pr_comment(monkeypatch) -> None:
     ]
 
 
+def test_github_fetch_metadata_uses_gh_pr_view(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
+
+    def run(cmd, text, capture_output):
+        calls.append(cmd)
+        if cmd[:3] == ["gh", "auth", "status"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "title": "Add remote PR metadata",
+                    "body": "Use the PR description in reviews.",
+                    "url": "https://github.com/hfoffani/pr-review-council/pull/33",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
+
+    metadata = GitHubPullRequestPlatform().fetch_metadata(
+        "https://github.com/hfoffani/pr-review-council/pull/33"
+    )
+
+    assert calls == [
+        ["gh", "auth", "status", "--hostname", "github.com"],
+        [
+            "gh",
+            "pr",
+            "view",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--json",
+            "title,body,url",
+        ],
+    ]
+    assert metadata.title == "Add remote PR metadata"
+    assert metadata.description == "Use the PR description in reviews."
+    assert metadata.url == "https://github.com/hfoffani/pr-review-council/pull/33"
+
+
+def test_github_fetch_metadata_rejects_invalid_json(monkeypatch) -> None:
+    monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
+
+    def run(cmd, text, capture_output):
+        if cmd[:3] == ["gh", "auth", "status"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(returncode=0, stdout="{", stderr="")
+
+    monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
+
+    with pytest.raises(PRPlatformError, match="invalid PR metadata JSON"):
+        GitHubPullRequestPlatform().fetch_metadata(
+            "https://github.com/hfoffani/pr-review-council/pull/33"
+        )
+
+
 def test_github_missing_cli_has_install_message(monkeypatch) -> None:
     monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: None)
 
@@ -256,6 +315,41 @@ def test_bitbucket_fetch_diff_calls_api_with_basic_auth(monkeypatch) -> None:
     assert diff.diff.startswith("diff --git")
     assert diff.files_total == 1
     assert diff.truncated is False
+
+
+def test_bitbucket_fetch_metadata_calls_api_with_basic_auth(monkeypatch) -> None:
+    _set_bb_env(monkeypatch)
+    body = json.dumps(
+        {
+            "title": "Add PR metadata",
+            "description": "Use the hosted PR description.",
+        }
+    ).encode()
+    calls = _capture_urlopen(monkeypatch, _FakeResp(body=body, status=200))
+
+    metadata = BitBucketPullRequestPlatform().fetch_metadata(_BB_PR_URL)
+
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == (
+        "https://api.bitbucket.org/2.0/repositories/myws/myrepo"
+        "/pullrequests/42"
+    )
+    assert call["headers"]["Authorization"] == _BB_BASIC
+    assert call["headers"]["Accept"] == "application/json"
+    assert call["data"] is None
+    assert metadata.title == "Add PR metadata"
+    assert metadata.description == "Use the hosted PR description."
+    assert metadata.url == _BB_PR_URL
+
+
+def test_bitbucket_fetch_metadata_rejects_invalid_json(monkeypatch) -> None:
+    _set_bb_env(monkeypatch)
+    _capture_urlopen(monkeypatch, _FakeResp(body=b"{", status=200))
+
+    with pytest.raises(PRPlatformError, match="invalid PR metadata JSON"):
+        BitBucketPullRequestPlatform().fetch_metadata(_BB_PR_URL)
 
 
 def test_bitbucket_post_comment_posts_json_with_basic_auth(monkeypatch) -> None:

@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from prc import cli
 from prc.council import CouncilOutcome
 from prc.git_ops import DiffResult, GitError
+from prc.pr_platforms.base import PullRequestMetadata
 
 
 runner = CliRunner()
@@ -215,6 +216,14 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
                 bytes_total=11,
             )
 
+        def fetch_metadata(self, url):
+            assert url == "https://github.com/hfoffani/pr-review-council/pull/33"
+            return PullRequestMetadata(
+                title="Remote title",
+                description="Remote description",
+                url=url,
+            )
+
         def post_comment(self, url, body):
             raise AssertionError("dry run should not post")
 
@@ -234,7 +243,18 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
     )
 
     def run_council(reviewers, ctx, timeout, verbose, progress, prompts):
-        assert ctx.render() == "<diff>\nremote diff\n</diff>"
+        assert ctx.render() == (
+            "<pull_request>\n"
+            "<title>Remote title</title>\n"
+            "<description>\n"
+            "Remote description\n"
+            "</description>\n"
+            "<url>https://github.com/hfoffani/pr-review-council/pull/33</url>\n"
+            "</pull_request>\n\n"
+            "<diff>\n"
+            "remote diff\n"
+            "</diff>"
+        )
         return CouncilOutcome(
             r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
         )
@@ -266,6 +286,13 @@ def test_cli_remote_pr_post_suppresses_stdout(monkeypatch) -> None:
                 files_included=1,
                 truncated=False,
                 bytes_total=11,
+            )
+
+        def fetch_metadata(self, url):
+            return PullRequestMetadata(
+                title="Remote title",
+                description="Remote description",
+                url=url,
             )
 
         def post_comment(self, url, body):

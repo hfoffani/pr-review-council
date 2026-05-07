@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -8,7 +9,7 @@ from urllib.parse import urlparse
 from prc.git_ops import DiffResult
 
 from ._diff_utils import count_diff_files, truncate_diff
-from .base import PRPlatformError, PullRequestPlatform
+from .base import PRPlatformError, PullRequestMetadata, PullRequestPlatform
 
 GH = "gh"
 
@@ -38,6 +39,20 @@ class GitHubPullRequestPlatform(PullRequestPlatform):
         _parse_github_pr_url(url)
         _ensure_gh(url)
         _run_gh([GH, "pr", "comment", url, "--body", body], url)
+
+    def fetch_metadata(self, url: str) -> PullRequestMetadata:
+        _parse_github_pr_url(url)
+        _ensure_gh(url)
+        raw = _run_gh([GH, "pr", "view", url, "--json", "title,body,url"], url)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise PRPlatformError("gh returned invalid PR metadata JSON") from e
+        return PullRequestMetadata(
+            title=_json_string(data, "title"),
+            description=_json_string(data, "body"),
+            url=_json_string(data, "url") or url,
+        )
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,13 @@ def _run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(cmd, text=True, capture_output=True)
     except OSError as e:
         raise PRPlatformError(f"failed to run {cmd[0]!r}: {e}") from e
+
+
+def _json_string(data: object, key: str) -> str:
+    if not isinstance(data, dict):
+        return ""
+    value = data.get(key)
+    return value if isinstance(value, str) else ""
 
 
 def _host(url: str) -> str:
