@@ -353,6 +353,41 @@ def test_cli_remote_pr_post_requires_platform_support(monkeypatch) -> None:
     assert "--post is not supported" in res.stderr
 
 
+def test_cli_remote_pr_metadata_not_implemented_exits_4(monkeypatch) -> None:
+    class FakePlatform:
+        def fetch_diff(self, url, max_bytes):
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def fetch_metadata(self, url):
+            raise NotImplementedError("metadata support is coming soon")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("review should not start")
+        ),
+    )
+
+    res = runner.invoke(
+        cli.app,
+        ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 4
+    assert "metadata support is coming soon" in res.stderr
+
+
 def test_cli_platform_construction_not_implemented_is_reported(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,

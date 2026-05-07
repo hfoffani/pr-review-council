@@ -34,6 +34,21 @@ def test_base_fetch_metadata_wraps_unexpected_errors() -> None:
         BadPlatform().fetch_metadata("https://example.com/org/repo/pull/1")
 
 
+def test_base_fetch_metadata_preserves_not_implemented() -> None:
+    class MissingMetadataPlatform(PullRequestPlatform):
+        def fetch_diff(self, url, max_bytes):
+            raise NotImplementedError
+
+        def _fetch_metadata(self, url):
+            raise NotImplementedError("metadata support is coming soon")
+
+        def post_comment(self, url, body):
+            raise NotImplementedError
+
+    with pytest.raises(NotImplementedError, match="metadata support"):
+        MissingMetadataPlatform().fetch_metadata("https://example.com/org/repo/pull/1")
+
+
 def test_github_fetch_diff_uses_gh_pr_diff(monkeypatch) -> None:
     calls: list[list[str]] = []
 

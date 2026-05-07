@@ -39,6 +39,8 @@ class PullRequestPlatform:
         """Return pull request title/description when the host supports it."""
         try:
             return self._fetch_metadata(url)
+        except NotImplementedError:
+            raise
         except PRPlatformError:
             raise
         except Exception as e:
