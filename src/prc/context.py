@@ -32,9 +32,9 @@ class PullRequestContext(ContextProvider):
     metadata: PullRequestMetadata
 
     def render(self) -> str:
-        title = escape(self.metadata.title)
-        description = escape(self.metadata.description)
-        url = escape(self.metadata.url)
+        title = _escape_optional(self.metadata.title)
+        description = _escape_optional(self.metadata.description)
+        url = _escape_optional(self.metadata.url)
         return (
             "<pull_request>\n"
             f"<title>{title}</title>\n"
@@ -43,3 +43,7 @@ class PullRequestContext(ContextProvider):
             "</pull_request>\n\n"
             f"<diff>\n{self.diff}\n</diff>"
         )
+
+
+def _escape_optional(value: object) -> str:
+    return escape(value) if isinstance(value, str) else ""

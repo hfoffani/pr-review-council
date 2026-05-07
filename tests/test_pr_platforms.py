@@ -9,10 +9,29 @@ from types import SimpleNamespace
 import pytest
 
 from prc.pr_platforms import platform_for_url
-from prc.pr_platforms.base import PRPlatformError, UnsupportedPRHost
+from prc.pr_platforms.base import (
+    PRPlatformError,
+    PullRequestPlatform,
+    UnsupportedPRHost,
+)
 from prc.pr_platforms.bitbucket import BitBucketPullRequestPlatform
 from prc.pr_platforms.github import GitHubPullRequestPlatform
 from prc.pr_platforms.gitlab import GitLabPullRequestPlatform
+
+
+def test_base_fetch_metadata_wraps_unexpected_errors() -> None:
+    class BadPlatform(PullRequestPlatform):
+        def fetch_diff(self, url, max_bytes):
+            raise NotImplementedError
+
+        def _fetch_metadata(self, url):
+            raise ValueError("bad payload")
+
+        def post_comment(self, url, body):
+            raise NotImplementedError
+
+    with pytest.raises(PRPlatformError, match="failed to fetch pull request metadata"):
+        BadPlatform().fetch_metadata("https://example.com/org/repo/pull/1")
 
 
 def test_github_fetch_diff_uses_gh_pr_diff(monkeypatch) -> None:
@@ -133,6 +152,26 @@ def test_github_fetch_metadata_rejects_invalid_json(monkeypatch) -> None:
     monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
 
     with pytest.raises(PRPlatformError, match="invalid PR metadata JSON"):
+        GitHubPullRequestPlatform().fetch_metadata(
+            "https://github.com/hfoffani/pr-review-council/pull/33"
+        )
+
+
+def test_github_fetch_metadata_rejects_bad_field_types(monkeypatch) -> None:
+    monkeypatch.setattr("prc.pr_platforms.github.shutil.which", lambda name: "/bin/gh")
+
+    def run(cmd, text, capture_output):
+        if cmd[:3] == ["gh", "auth", "status"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"title": None, "body": "", "url": ""}),
+            stderr="",
+        )
+
+    monkeypatch.setattr("prc.pr_platforms.github.subprocess.run", run)
+
+    with pytest.raises(PRPlatformError, match="title.*string"):
         GitHubPullRequestPlatform().fetch_metadata(
             "https://github.com/hfoffani/pr-review-council/pull/33"
         )
@@ -349,6 +388,26 @@ def test_bitbucket_fetch_metadata_rejects_invalid_json(monkeypatch) -> None:
     _capture_urlopen(monkeypatch, _FakeResp(body=b"{", status=200))
 
     with pytest.raises(PRPlatformError, match="invalid PR metadata JSON"):
+        BitBucketPullRequestPlatform().fetch_metadata(_BB_PR_URL)
+
+
+def test_bitbucket_fetch_metadata_accepts_null_description(monkeypatch) -> None:
+    _set_bb_env(monkeypatch)
+    body = json.dumps({"title": "Add PR metadata", "description": None}).encode()
+    _capture_urlopen(monkeypatch, _FakeResp(body=body, status=200))
+
+    metadata = BitBucketPullRequestPlatform().fetch_metadata(_BB_PR_URL)
+
+    assert metadata.title == "Add PR metadata"
+    assert metadata.description is None
+
+
+def test_bitbucket_fetch_metadata_rejects_bad_field_types(monkeypatch) -> None:
+    _set_bb_env(monkeypatch)
+    body = json.dumps({"title": 42, "description": ""}).encode()
+    _capture_urlopen(monkeypatch, _FakeResp(body=body, status=200))
+
+    with pytest.raises(PRPlatformError, match="title.*string"):
         BitBucketPullRequestPlatform().fetch_metadata(_BB_PR_URL)
 
 

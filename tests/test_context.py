@@ -27,3 +27,23 @@ def test_pull_request_context_includes_escaped_metadata_before_diff() -> None:
         "+change\n"
         "</diff>"
     )
+
+
+def test_pull_request_context_handles_empty_and_none_metadata_fields() -> None:
+    ctx = PullRequestContext(
+        diff="diff body",
+        metadata=PullRequestMetadata(title="", description=None, url=None),
+    )
+
+    assert ctx.render() == (
+        "<pull_request>\n"
+        "<title></title>\n"
+        "<description>\n"
+        "\n"
+        "</description>\n"
+        "<url></url>\n"
+        "</pull_request>\n\n"
+        "<diff>\n"
+        "diff body\n"
+        "</diff>"
+    )

@@ -40,7 +40,7 @@ class GitHubPullRequestPlatform(PullRequestPlatform):
         _ensure_gh(url)
         _run_gh([GH, "pr", "comment", url, "--body", body], url)
 
-    def fetch_metadata(self, url: str) -> PullRequestMetadata:
+    def _fetch_metadata(self, url: str) -> PullRequestMetadata:
         _parse_github_pr_url(url)
         _ensure_gh(url)
         raw = _run_gh([GH, "pr", "view", url, "--json", "title,body,url"], url)
@@ -48,10 +48,12 @@ class GitHubPullRequestPlatform(PullRequestPlatform):
             data = json.loads(raw)
         except json.JSONDecodeError as e:
             raise PRPlatformError("gh returned invalid PR metadata JSON") from e
+        if not isinstance(data, dict):
+            raise PRPlatformError("gh returned invalid PR metadata JSON")
         return PullRequestMetadata(
-            title=_json_string(data, "title"),
-            description=_json_string(data, "body"),
-            url=_json_string(data, "url") or url,
+            title=_required_json_string(data, "title"),
+            description=_optional_json_string(data, "body"),
+            url=_optional_json_string(data, "url") or url,
         )
 
 
@@ -102,11 +104,22 @@ def _run_command(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         raise PRPlatformError(f"failed to run {cmd[0]!r}: {e}") from e
 
 
-def _json_string(data: object, key: str) -> str:
-    if not isinstance(data, dict):
-        return ""
+def _required_json_string(data: dict, key: str) -> str:
     value = data.get(key)
-    return value if isinstance(value, str) else ""
+    if not isinstance(value, str):
+        raise PRPlatformError(f"gh PR metadata field {key!r} must be a string")
+    return value
+
+
+def _optional_json_string(data: dict, key: str) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PRPlatformError(
+            f"gh PR metadata field {key!r} must be a string or null"
+        )
+    return value
 
 
 def _host(url: str) -> str:

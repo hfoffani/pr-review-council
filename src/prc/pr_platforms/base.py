@@ -21,9 +21,9 @@ class RemotePullRequest:
 
 @dataclass(frozen=True)
 class PullRequestMetadata:
-    title: str
-    description: str
-    url: str
+    title: str | None
+    description: str | None
+    url: str | None
 
 
 class PullRequestPlatform:
@@ -37,6 +37,16 @@ class PullRequestPlatform:
 
     def fetch_metadata(self, url: str) -> PullRequestMetadata | None:
         """Return pull request title/description when the host supports it."""
+        try:
+            return self._fetch_metadata(url)
+        except PRPlatformError:
+            raise
+        except Exception as e:
+            raise PRPlatformError(
+                f"failed to fetch pull request metadata: {e}"
+            ) from e
+
+    def _fetch_metadata(self, url: str) -> PullRequestMetadata | None:
         return None
 
     def post_comment(self, url: str, body: str) -> None:

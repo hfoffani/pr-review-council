@@ -57,7 +57,7 @@ class BitBucketPullRequestPlatform(PullRequestPlatform):
             expected_status=201,
         )
 
-    def fetch_metadata(self, url: str) -> PullRequestMetadata:
+    def _fetch_metadata(self, url: str) -> PullRequestMetadata:
         parsed = _parse_bitbucket_pr_url(url)
         user, token = _require_creds()
         api_url = (
@@ -66,8 +66,8 @@ class BitBucketPullRequestPlatform(PullRequestPlatform):
         )
         data = _http_get_json(api_url, user, token)
         return PullRequestMetadata(
-            title=_json_string(data, "title"),
-            description=_json_string(data, "description"),
+            title=_required_json_string(data, "title"),
+            description=_optional_json_string(data, "description"),
             url=url,
         )
 
@@ -222,6 +222,21 @@ def _read_snippet(resp_or_err) -> str:
     return body.strip()[:200]
 
 
-def _json_string(data: dict, key: str) -> str:
+def _required_json_string(data: dict, key: str) -> str:
     value = data.get(key)
-    return value if isinstance(value, str) else ""
+    if not isinstance(value, str):
+        raise PRPlatformError(
+            f"BitBucket PR metadata field {key!r} must be a string"
+        )
+    return value
+
+
+def _optional_json_string(data: dict, key: str) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise PRPlatformError(
+            f"BitBucket PR metadata field {key!r} must be a string or null"
+        )
+    return value
