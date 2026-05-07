@@ -381,6 +381,7 @@ def test_review_diff_builds_reviewers_and_final(monkeypatch) -> None:
         ),
         timeout=180,
         verbose=False,
+        progress=lambda _: None,
     )
 
     assert final == "final"
@@ -602,6 +603,7 @@ def test_cli_progress_wraps_llm_work(
     assert res.stdout == "final\n"
     assert events == [
         "open",
+        cli.PROGRESS_DIFF,
         cli.PROGRESS_COUNCIL_START,
         cli.PROGRESS_R1,
         cli.PROGRESS_R2,
@@ -668,7 +670,7 @@ def test_cli_progress_closes_before_council_collapse(
 
     assert res.exit_code == 3
     assert "council collapsed" in res.stderr
-    assert events == ["open", cli.PROGRESS_COUNCIL_START, cli.PROGRESS_R1, "closed"]
+    assert events == ["open", cli.PROGRESS_DIFF, cli.PROGRESS_COUNCIL_START, cli.PROGRESS_R1, "closed"]
 
 
 def test_review_progress_disabled_when_stderr_is_not_terminal(

@@ -225,94 +225,99 @@ def review(
     chair_model = chairman or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
 
-    if remote_url is not None:
-        if platform is None:
-            print("prc: unsupported PR platform", file=sys.stderr)
-            raise typer.Exit(4)
-        try:
-            diff = platform.fetch_diff(remote_url, max_bytes=max_diff_bytes)
-        except NotImplementedError as e:
-            print(f"prc: {e}", file=sys.stderr)
-            raise typer.Exit(4)
-        except PRPlatformError as e:
-            print(f"prc: {e}", file=sys.stderr)
-            raise typer.Exit(4)
-    else:
-        repo_path = Path(repo).resolve()
-        if branch is None:
+    final: str | None = None
+
+    with _review_progress(enabled=not verbose) as progress:
+        progress(PROGRESS_DIFF)
+
+        if remote_url is not None:
+            if platform is None:
+                print("prc: unsupported PR platform", file=sys.stderr)
+                raise typer.Exit(4)
             try:
-                branch = current_branch(repo_path)
+                diff = platform.fetch_diff(remote_url, max_bytes=max_diff_bytes)
+            except NotImplementedError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+            except PRPlatformError as e:
+                print(f"prc: {e}", file=sys.stderr)
+                raise typer.Exit(4)
+        else:
+            repo_path = Path(repo).resolve()
+            if branch is None:
+                try:
+                    branch = current_branch(repo_path)
+                except GitError as e:
+                    print(f"prc: {e}", file=sys.stderr)
+                    raise typer.Exit(4)
+
+            try:
+                diff = capture_diff(
+                    repo_path, branch, base, max_bytes=max_diff_bytes
+                )
             except GitError as e:
                 print(f"prc: {e}", file=sys.stderr)
                 raise typer.Exit(4)
 
-        try:
-            diff = capture_diff(
-                repo_path, branch, base, max_bytes=max_diff_bytes
+        if verbose:
+            print(
+                f"prc: base={diff.base} branch={diff.branch} "
+                f"files={diff.files_total} bytes={diff.bytes_total}",
+                file=sys.stderr,
             )
-        except GitError as e:
-            print(f"prc: {e}", file=sys.stderr)
-            raise typer.Exit(4)
+        if diff.truncated:
+            print(
+                f"prc: warning: diff truncated, "
+                f"{diff.files_included}/{diff.files_total} files included",
+                file=sys.stderr,
+            )
+        if not diff.diff:
+            print(
+                "prc: no changes between base and branch; nothing to review",
+                file=sys.stderr,
+            )
+            raise typer.Exit(0)
 
-    if verbose:
-        print(
-            f"prc: base={diff.base} branch={diff.branch} "
-            f"files={diff.files_total} bytes={diff.bytes_total}",
-            file=sys.stderr,
+        final, outcome, chair_error = _review_diff(
+            c=c,
+            council_models=council_models,
+            chair_model=chair_model,
+            on_council_flag=on_council_flag,
+            diff=diff,
+            timeout=timeout,
+            verbose=verbose,
+            progress=progress,
         )
-    if diff.truncated:
-        print(
-            f"prc: warning: diff truncated, "
-            f"{diff.files_included}/{diff.files_total} files included",
-            file=sys.stderr,
-        )
-    if not diff.diff:
-        print(
-            "prc: no changes between base and branch; nothing to review",
-            file=sys.stderr,
-        )
-        raise typer.Exit(0)
 
-    final, outcome, chair_error = _review_diff(
-        c=c,
-        council_models=council_models,
-        chair_model=chair_model,
-        on_council_flag=on_council_flag,
-        diff=diff,
-        timeout=timeout,
-        verbose=verbose,
-    )
+        if len(outcome.r1) < 2:
+            print(
+                f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); "
+                "aborting",
+                file=sys.stderr,
+            )
+            for letter, why in outcome.failures.items():
+                print(f"prc:   {letter}: {why}", file=sys.stderr)
+            raise typer.Exit(3)
 
-    if len(outcome.r1) < 2:
-        print(
-            f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); "
-            "aborting",
-            file=sys.stderr,
-        )
-        for letter, why in outcome.failures.items():
-            print(f"prc:   {letter}: {why}", file=sys.stderr)
-        raise typer.Exit(3)
-
-    if chair_error is not None:
-        print(
-            f"prc: chair failed: {_format_exception(chair_error)}",
-            file=sys.stderr,
-        )
-        raise typer.Exit(2)
-
-    if final is None:
-        print("prc: chair failed: no verdict produced", file=sys.stderr)
-        raise typer.Exit(2)
-
-    if verbose:
-        print(f"prc: chair {chair_model} ok", file=sys.stderr)
-    if disclose:
-        final = _append_reviewer_identities(final, outcome)
-    if post:
-        if remote_url is None or platform is None:
-            print("prc: --post requires a supported pull request URL", file=sys.stderr)
+        if chair_error is not None:
+            print(
+                f"prc: chair failed: {_format_exception(chair_error)}",
+                file=sys.stderr,
+            )
             raise typer.Exit(2)
-        with _review_progress(enabled=not verbose) as progress:
+
+        if final is None:
+            print("prc: chair failed: no verdict produced", file=sys.stderr)
+            raise typer.Exit(2)
+
+        if verbose:
+            print(f"prc: chair {chair_model} ok", file=sys.stderr)
+        if disclose:
+            final = _append_reviewer_identities(final, outcome)
+        if post:
+            if remote_url is None or platform is None:
+                print("prc: --post requires a supported pull request URL", file=sys.stderr)
+                raise typer.Exit(2)
             progress(PROGRESS_POST)
             try:
                 platform.post_comment(remote_url, final)
@@ -322,11 +327,10 @@ def review(
             except PRPlatformError as e:
                 print(f"prc: {e}", file=sys.stderr)
                 raise typer.Exit(4)
-        if verbose:
-            print("prc: review comment posted", file=sys.stderr)
-        return
+            if verbose:
+                print("prc: review comment posted", file=sys.stderr)
 
-    if dry_run_mode:
+    if dry_run_mode and final is not None:
         print(final)
 
 
@@ -437,6 +441,7 @@ def _print_subcommands() -> None:
     print("  Uninstall: uv tool uninstall pr-review-council")
 
 
+PROGRESS_DIFF = "prc: fetching diff..."
 PROGRESS_COUNCIL_START = "prc: council starting..."
 PROGRESS_R1 = "prc: council reviewing diff..."
 PROGRESS_R2 = "prc: council reviewing reviewers..."
@@ -453,6 +458,7 @@ def _review_diff(
     diff: DiffResult,
     timeout: float,
     verbose: bool,
+    progress: Callable[[str], None],
 ) -> tuple[str | None, CouncilOutcome, BaseException | None]:
     try:
         chair = make_reviewer(chair_model, c.providers, c.api_keys)
@@ -490,25 +496,24 @@ def _review_diff(
     ctx = DiffOnlyContext(diff=diff.diff)
     final: str | None = None
     chair_error: BaseException | None = None
-    with _review_progress(enabled=not verbose) as progress:
-        progress(PROGRESS_COUNCIL_START)
-        outcome = run_council(
-            reviewers,
-            ctx,
-            timeout=timeout,
-            verbose=verbose,
-            progress=_council_progress(progress),
-            prompts=prompts,
-        )
+    progress(PROGRESS_COUNCIL_START)
+    outcome = run_council(
+        reviewers,
+        ctx,
+        timeout=timeout,
+        verbose=verbose,
+        progress=_council_progress(progress),
+        prompts=prompts,
+    )
 
-        if len(outcome.r1) >= 2:
-            progress(PROGRESS_CHAIR)
-            try:
-                final = synthesize(
-                    chair, outcome, ctx, timeout=timeout, prompts=prompts
-                )
-            except Exception as e:
-                chair_error = e
+    if len(outcome.r1) >= 2:
+        progress(PROGRESS_CHAIR)
+        try:
+            final = synthesize(
+                chair, outcome, ctx, timeout=timeout, prompts=prompts
+            )
+        except Exception as e:
+            chair_error = e
 
     return final, outcome, chair_error
 
