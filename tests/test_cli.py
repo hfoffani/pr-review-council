@@ -40,7 +40,7 @@ def test_cli_empty_diff_exits_zero(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="",
@@ -99,7 +99,7 @@ def test_cli_happy_path_prints_final_review(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -154,7 +154,7 @@ def test_cli_disclose_appends_reviewer_identities(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -484,6 +484,18 @@ def test_cli_remote_pr_rejects_branch_base_and_conflicting_modes() -> None:
         [
             "review",
             "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--include-dirty",
+        ],
+    )
+
+    assert res.exit_code == 2
+    assert "do not support --include-dirty" in res.stderr
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
             "--dry-run",
             "--post",
         ],
@@ -526,7 +538,7 @@ def test_cli_uses_custom_prompts_file(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -574,7 +586,7 @@ def test_cli_bad_prompts_file_exits_5(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -631,7 +643,7 @@ def test_cli_progress_wraps_llm_work(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -697,7 +709,7 @@ def test_cli_progress_closes_before_council_collapse(
     monkeypatch.setattr(
         cli,
         "capture_diff",
-        lambda repo, branch, base, max_bytes: DiffResult(
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
             base="main",
             branch=branch,
             diff="diff body",
@@ -770,9 +782,10 @@ def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     monkeypatch.setattr(cli, "current_branch", lambda repo: "current-branch")
     seen: dict[str, object] = {}
 
-    def capture_diff(repo, branch, base, max_bytes):
+    def capture_diff(repo, branch, base, include_dirty=False, max_bytes=600_000):
         seen["repo"] = repo
         seen["branch"] = branch
+        seen["include_dirty"] = include_dirty
         return DiffResult(
             base="main",
             branch=branch,
@@ -803,6 +816,48 @@ def test_review_defaults_to_current_repo_and_branch(monkeypatch) -> None:
     assert res.exit_code == 0
     assert seen["repo"] == Path(".").resolve()
     assert seen["branch"] == "current-branch"
+    assert seen["include_dirty"] is False
+
+
+def test_review_passes_include_dirty_to_local_diff(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    seen: dict[str, object] = {}
+
+    def capture_diff(repo, branch, base, include_dirty=False, max_bytes=600_000):
+        seen["include_dirty"] = include_dirty
+        return DiffResult(
+            base="main",
+            branch=branch,
+            diff="diff body",
+            files_total=1,
+            files_included=1,
+            truncated=False,
+            bytes_total=9,
+        )
+
+    monkeypatch.setattr(cli, "capture_diff", capture_diff)
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        ),
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "final")
+
+    res = runner.invoke(
+        cli.app, ["review", str(tmp_path), "feature", "--include-dirty"]
+    )
+
+    assert res.exit_code == 0
+    assert seen["include_dirty"] is True
 
 
 def test_config_resolves_active_members(monkeypatch) -> None:
@@ -918,6 +973,7 @@ def test_help_review_shows_options() -> None:
     assert "Usage: prc review" in res.stdout
     assert "--base BASE" in res.stdout
     assert "--disclose" in res.stdout
+    assert "--include-dirty" in res.stdout
     assert "--timeout SECS" in res.stdout
 
 
