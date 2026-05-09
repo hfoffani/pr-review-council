@@ -202,8 +202,12 @@ def test_cli_disclose_appends_reviewer_identities(
     )
 
 
-def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
+def test_cli_remote_pr_defaults_to_post(monkeypatch) -> None:
+    posted: dict[str, str] = {}
+
     class FakePlatform:
+        supports_posting = True
+
         def fetch_diff(self, url, max_bytes):
             assert url == "https://github.com/hfoffani/pr-review-council/pull/33"
             return DiffResult(
@@ -225,7 +229,8 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
             )
 
         def post_comment(self, url, body):
-            raise AssertionError("dry run should not post")
+            posted["url"] = url
+            posted["body"] = body
 
     monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
     monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
@@ -265,6 +270,64 @@ def test_cli_remote_pr_defaults_to_dry_run(monkeypatch) -> None:
     res = runner.invoke(
         cli.app,
         ["review", "https://github.com/hfoffani/pr-review-council/pull/33"],
+    )
+
+    assert res.exit_code == 0
+    assert res.stdout == ""
+    assert posted == {
+        "url": "https://github.com/hfoffani/pr-review-council/pull/33",
+        "body": "remote final",
+    }
+
+
+def test_cli_remote_pr_dry_run_prints_without_posting(monkeypatch) -> None:
+    class FakePlatform:
+        supports_posting = True
+
+        def fetch_diff(self, url, max_bytes):
+            return DiffResult(
+                base="repo#base",
+                branch="repo#33",
+                diff="remote diff",
+                files_total=1,
+                files_included=1,
+                truncated=False,
+                bytes_total=11,
+            )
+
+        def fetch_metadata(self, url):
+            return PullRequestMetadata(
+                title="Remote title",
+                description="Remote description",
+                url=url,
+            )
+
+        def post_comment(self, url, body):
+            raise AssertionError("dry run should not post")
+
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "platform_for_url", lambda url: FakePlatform())
+    monkeypatch.setattr(
+        cli,
+        "make_reviewer",
+        lambda model, providers, api_keys: SimpleNamespace(model=model),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_council",
+        lambda reviewers, ctx, timeout, verbose, progress, prompts: CouncilOutcome(
+            r1={"A": ("model-a", "a"), "B": ("model-b", "b")}
+        ),
+    )
+    monkeypatch.setattr(cli, "synthesize", lambda *args, **kwargs: "remote final")
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "review",
+            "https://github.com/hfoffani/pr-review-council/pull/33",
+            "--dry-run",
+        ],
     )
 
     assert res.exit_code == 0
@@ -355,6 +418,8 @@ def test_cli_remote_pr_post_requires_platform_support(monkeypatch) -> None:
 
 def test_cli_remote_pr_metadata_not_implemented_exits_4(monkeypatch) -> None:
     class FakePlatform:
+        supports_posting = True
+
         def fetch_diff(self, url, max_bytes):
             return DiffResult(
                 base="repo#base",

@@ -237,11 +237,11 @@ prc review --dry-run https://bitbucket.org/<workspace>/<repo>/pull-requests/42/o
 prc review --post https://bitbucket.org/<workspace>/<repo>/pull-requests/42
 ```
 
-Remote PR reviews default to dry-run mode: the report is printed and no
-comment is posted. `--dry-run` is an explicit spelling of that default. Use
-`--post` only with a supported pull request URL to add the generated report as
-a normal PR comment instead; in that mode `prc` shows progress/errors on stderr
-and does not print the review body. `--dry-run` and `--post` are mutually
+Remote PR reviews default to posting: the generated report is added as a
+normal PR comment on the supported pull request URL, and `prc` shows
+progress/errors on stderr without printing the review body. `--post` is an
+explicit spelling of that default. Use `--dry-run` to print the report on
+stdout without posting instead. `--dry-run` and `--post` are mutually
 exclusive.
 
 GitLab URLs are detected, but support is not implemented yet.
@@ -261,7 +261,7 @@ prc review [repo|pr-url] [branch]
     [--chairman MODEL]                  # override config chair
     [--chair-on-council]                # include chair as a council voice
     [--dry-run]                         # print review without posting
-    [--post]                            # post review; requires supported PR URL
+    [--post]                            # post review; default for PR URLs
     [--disclose]                        # append reviewer identity mapping
     [--include-dirty]                   # include local dirty changes; local only
     [--config PATH]                     # explicit config file

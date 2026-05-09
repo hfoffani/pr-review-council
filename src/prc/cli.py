@@ -54,8 +54,8 @@ Options:
   --chairman MODEL            Override config chair.
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
-  --dry-run                   Show review output without posting; default.
-  --post                      Post review as a PR comment; requires a supported PR URL.
+  --dry-run                   Show review output without posting.
+  --post                      Post review as a PR comment; default for PR URLs.
   --disclose                  Append reviewer letter -> model name mapping.
   --include-dirty             Include local dirty changes; local repos only.
   --config PATH               Explicit config file.
@@ -144,16 +144,16 @@ def review(
         bool,
         typer.Option(
             "--dry-run",
-            help="Show review output without posting; default for PR URLs",
+            help="Show review output without posting",
         ),
-    ] = True,
+    ] = False,
     post: Annotated[
         bool,
         typer.Option(
             "--post",
-            help="Post review as a PR comment without printing it",
+            help="Post review as a PR comment; default for PR URLs",
         ),
-    ] = False,
+    ] = True,
     config_path: Annotated[
         Optional[Path], typer.Option("--config", help="Explicit config path")
     ] = None,
@@ -175,7 +175,11 @@ def review(
         ctx.get_parameter_source("dry_run")
         == click.core.ParameterSource.COMMANDLINE
     )
-    if dry_run_explicit and dry_run and post:
+    post_explicit = (
+        ctx.get_parameter_source("post")
+        == click.core.ParameterSource.COMMANDLINE
+    )
+    if dry_run_explicit and post_explicit and dry_run and post:
         print(
             "prc: choose either --dry-run or --post, not both",
             file=sys.stderr,
@@ -198,16 +202,21 @@ def review(
             file=sys.stderr,
         )
         raise typer.Exit(2)
-    if remote_url is None and post:
+    if remote_url is None and post_explicit and post:
         print("prc: --post requires a pull request URL", file=sys.stderr)
         raise typer.Exit(2)
-    dry_run_mode = dry_run and not post
+    if dry_run_explicit and dry_run:
+        dry_run_mode = True
+    elif remote_url is None:
+        dry_run_mode = True
+    else:
+        dry_run_mode = not post
 
     platform = None
     if remote_url is not None:
         try:
             platform = platform_for_url(remote_url)
-            if post and not platform.supports_posting:
+            if not dry_run_mode and not platform.supports_posting:
                 print(
                     "prc: --post is not supported for this pull request host",
                     file=sys.stderr,
@@ -346,7 +355,7 @@ def review(
             print(f"prc: chair {chair_model} ok", file=sys.stderr)
         if disclose:
             final = _append_reviewer_identities(final, outcome)
-        if post:
+        if not dry_run_mode:
             if remote_url is None or platform is None:
                 print("prc: --post requires a supported pull request URL", file=sys.stderr)
                 raise typer.Exit(2)
