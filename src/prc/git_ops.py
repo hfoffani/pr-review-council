@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,12 @@ class DiffResult:
     files_included: int
     truncated: bool
     bytes_total: int
+
+
+@dataclass
+class _DiffFile:
+    path: str
+    diff: str
 
 
 BASE_CANDIDATES = (
@@ -39,6 +46,15 @@ def _run(cmd: list[str], cwd: Path) -> str:
     return res.stdout
 
 
+def _run_diff(cmd: list[str], cwd: Path) -> str:
+    res = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    if res.returncode not in {0, 1}:
+        raise GitError(
+            f"git failed: {' '.join(cmd)}\n{res.stderr.strip()}"
+        )
+    return res.stdout
+
+
 def repo_root(path: Path) -> Path:
     """Return the git repo root for any path inside a repository."""
     if not path.exists():
@@ -53,7 +69,9 @@ def repo_root(path: Path) -> Path:
     return Path(top)
 
 
-def detect_base(repo: Path, branch: str) -> str:
+def detect_base(
+    repo: Path, branch: str, *, allow_same_commit: bool = False
+) -> str:
     """Return the likely target ref for a two-dot review diff."""
     scores: list[tuple[int, int, int, int, str]] = []
     branch_commit = _run(["git", "rev-parse", "--verify", branch], repo).strip()
@@ -63,13 +81,14 @@ def detect_base(repo: Path, branch: str) -> str:
             candidate_commit = _run(
                 ["git", "rev-parse", "--verify", candidate], repo
             ).strip()
-            if candidate_commit == branch_commit:
+            if candidate_commit == branch_commit and not allow_same_commit:
                 continue
             numstat = _run(
                 [
                     "git",
                     "diff",
                     "--numstat",
+                    "-z",
                     "--no-renames",
                     f"{candidate}..{branch}",
                 ],
@@ -98,7 +117,7 @@ def _numstat_score(numstat: str) -> tuple[int, int, int]:
     files_changed = 0
     binary_files_changed = 0
     lines_changed = 0
-    for line in numstat.splitlines():
+    for line in _numstat_lines(numstat):
         if not line.strip():
             continue
         parts = line.split("\t")
@@ -116,6 +135,12 @@ def _numstat_score(numstat: str) -> tuple[int, int, int]:
     return files_changed, binary_files_changed, lines_changed
 
 
+def _numstat_lines(numstat: str) -> list[str]:
+    if "\0" in numstat:
+        return [line for line in numstat.split("\0") if line]
+    return numstat.splitlines()
+
+
 def current_branch(repo: Path) -> str:
     repo = repo_root(repo)
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo).strip()
@@ -131,12 +156,23 @@ def capture_diff(
     branch: str,
     base: str | None = None,
     *,
+    include_dirty: bool = False,
     max_bytes: int = 600_000,
 ) -> DiffResult:
     repo = repo_root(repo)
-    base_ref = base or detect_base(repo, branch)
-    diff_range = f"{base_ref}..{branch}"
-    diff = _run(["git", "diff", diff_range], repo)
+    if include_dirty:
+        checked_out = current_branch(repo)
+        if branch != checked_out:
+            raise GitError(
+                "--include-dirty can only review the checked-out branch "
+                f"({checked_out!r}), not {branch!r}"
+            )
+    base_ref = base or detect_base(
+        repo, branch, allow_same_commit=include_dirty
+    )
+    diff_ref = base_ref if include_dirty else f"{base_ref}..{branch}"
+    files = _diff_files(repo, diff_ref, include_untracked=include_dirty)
+    diff = "".join(file.diff for file in files)
     bytes_total = len(diff.encode("utf-8"))
 
     if bytes_total == 0:
@@ -157,15 +193,7 @@ def capture_diff(
             ".gitattributes or split this branch."
         )
 
-    numstat = _run(
-        ["git", "diff", "--numstat", "--no-renames", diff_range],
-        repo,
-    )
-    paths = [
-        ln.split("\t", 2)[-1].strip()
-        for ln in numstat.splitlines()
-        if ln.strip()
-    ]
+    paths = [file.path for file in files]
     files_total = len(paths)
 
     if bytes_total <= max_bytes:
@@ -182,11 +210,9 @@ def capture_diff(
     included: list[str] = []
     chunks: list[str] = []
     used = 0
-    for p in paths:
-        per_file = _run(
-            ["git", "diff", "--no-renames", diff_range, "--", p],
-            repo,
-        )
+    for file in files:
+        p = file.path
+        per_file = file.diff
         sz = len(per_file.encode("utf-8"))
         if used + sz > max_bytes:
             if not included:
@@ -214,3 +240,44 @@ def capture_diff(
         truncated=True,
         bytes_total=bytes_total,
     )
+
+
+def _diff_files(
+    repo: Path,
+    diff_ref: str,
+    *,
+    include_untracked: bool,
+) -> list[_DiffFile]:
+    numstat = _run(
+        ["git", "diff", "--numstat", "-z", "--no-renames", diff_ref],
+        repo,
+    )
+    paths = [
+        ln.split("\t", 2)[-1].strip()
+        for ln in _numstat_lines(numstat)
+        if ln.strip()
+    ]
+    files = [
+        _DiffFile(
+            path=p,
+            diff=_run(["git", "diff", "--no-renames", diff_ref, "--", p], repo),
+        )
+        for p in paths
+    ]
+    if include_untracked:
+        files.extend(_untracked_diff_files(repo))
+    return files
+
+
+def _untracked_diff_files(repo: Path) -> list[_DiffFile]:
+    raw = _run(["git", "ls-files", "--others", "--exclude-standard", "-z"], repo)
+    paths = [p for p in raw.split("\0") if p]
+    return [
+        _DiffFile(
+            path=p,
+            diff=_run_diff(
+                ["git", "diff", "--no-index", "--", os.devnull, p], repo
+            ),
+        )
+        for p in paths
+    ]

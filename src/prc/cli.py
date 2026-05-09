@@ -57,6 +57,7 @@ Options:
   --dry-run                   Show review output without posting; default.
   --post                      Post review as a PR comment; requires a supported PR URL.
   --disclose                  Append reviewer letter -> model name mapping.
+  --include-dirty             Include local dirty changes; local repos only.
   --config PATH               Explicit config file.
   --max-diff-bytes N          Truncation cap, default 600000.
   --timeout SECS              Per-model API call timeout in seconds, default 180.
@@ -129,6 +130,16 @@ def review(
             help="Append reviewer letter to model name mapping to final output",
         ),
     ] = False,
+    include_dirty: Annotated[
+        bool,
+        typer.Option(
+            "--include-dirty",
+            help=(
+                "Include local staged, unstaged, and untracked changes; "
+                "local repository reviews only"
+            ),
+        ),
+    ] = False,
     dry_run: Annotated[
         bool,
         typer.Option(
@@ -180,6 +191,12 @@ def review(
         raise typer.Exit(2)
     if remote_url is not None and base is not None:
         print("prc: PR URL reviews do not support --base", file=sys.stderr)
+        raise typer.Exit(2)
+    if remote_url is not None and include_dirty:
+        print(
+            "prc: PR URL reviews do not support --include-dirty",
+            file=sys.stderr,
+        )
         raise typer.Exit(2)
     if remote_url is None and post:
         print("prc: --post requires a pull request URL", file=sys.stderr)
@@ -263,7 +280,11 @@ def review(
 
             try:
                 diff = capture_diff(
-                    repo_path, branch, base, max_bytes=max_diff_bytes
+                    repo_path,
+                    branch,
+                    base,
+                    include_dirty=include_dirty,
+                    max_bytes=max_diff_bytes,
                 )
             except GitError as e:
                 print(f"prc: {e}", file=sys.stderr)

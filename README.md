@@ -43,7 +43,7 @@ Verdict: request-changes
 
 ## How it works
 
-1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`.
+1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`. For local repository reviews, `--include-dirty` instead reviews the checked-out branch plus staged, unstaged, and untracked local changes.
 2. **Round 1 (parallel)** — every council member reviews the diff blind.
 3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
 4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
@@ -200,6 +200,17 @@ prc review /path/to/repo my-feature-branch -v
 With no positional arguments, `prc review` uses the current directory and
 current git branch.
 
+To include local changes that have not been committed yet, add
+`--include-dirty`:
+
+```bash
+prc review --include-dirty
+```
+
+This option only applies to local repository reviews. It includes staged,
+unstaged, and untracked files from the checked-out branch, and it cannot be
+used when reviewing a different branch name or a remote pull request URL.
+
 ### Reviewing remote PRs
 
 `prc review` can also review a pull request URL. GitHub pull requests are
@@ -252,6 +263,7 @@ prc review [repo|pr-url] [branch]
     [--dry-run]                         # print review without posting
     [--post]                            # post review; requires supported PR URL
     [--disclose]                        # append reviewer identity mapping
+    [--include-dirty]                   # include local dirty changes; local only
     [--config PATH]                     # explicit config file
     [--max-diff-bytes N]                # truncation cap, default 600000
     [--timeout SECS]                    # per-call, default 180

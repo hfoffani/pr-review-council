@@ -126,12 +126,22 @@ def test_detect_base_ignores_feature_upstream(tmp_path: Path) -> None:
     assert git_ops.detect_base(repo, "feature") == "origin/main"
 
 
+def test_detect_base_can_allow_same_commit_candidate(repo_with_branch) -> None:
+    repo, _, _ = repo_with_branch
+
+    assert git_ops.detect_base(repo, "main", allow_same_commit=True) == "main"
+
+
 def test_numstat_score_rejects_malformed_lines() -> None:
     with pytest.raises(git_ops.GitError, match="malformed git numstat line"):
         git_ops._numstat_score("1\tmissing-path\n")
 
     with pytest.raises(git_ops.GitError, match="malformed git numstat line"):
         git_ops._numstat_score("x\t2\tfile.txt\n")
+
+
+def test_numstat_score_accepts_nul_delimited_paths_with_spaces() -> None:
+    assert git_ops._numstat_score("1\t2\tfile with spaces.txt\0") == (1, 0, 3)
 
 
 def test_current_branch(repo_with_branch) -> None:
@@ -177,6 +187,53 @@ def test_capture_diff_from_subdirectory(repo_with_branch) -> None:
     assert res.base == base
     assert res.files_total == 2
     assert "+more" in res.diff
+
+
+def test_capture_diff_can_include_dirty_changes(repo_with_branch) -> None:
+    repo, base, branch = repo_with_branch
+    (repo / "a.txt").write_text("hello\nmore\nlocal\n")
+    (repo / "c.txt").write_text("new\n")
+    (repo / "-new file [x].txt").write_text("special\n")
+
+    res = git_ops.capture_diff(repo, branch, include_dirty=True)
+
+    assert res.base == base
+    assert res.branch == branch
+    assert res.files_total == 4
+    assert res.files_included == 4
+    assert "+world" in res.diff
+    assert "+local" in res.diff
+    assert "diff --git a/c.txt b/c.txt" in res.diff
+    assert "+new" in res.diff
+    assert "diff --git a/-new file [x].txt b/-new file [x].txt" in res.diff
+    assert "+special" in res.diff
+
+
+def test_capture_diff_include_dirty_rejects_non_checked_out_branch(
+    repo_with_branch,
+) -> None:
+    repo, _, _ = repo_with_branch
+
+    with pytest.raises(git_ops.GitError, match="checked-out branch"):
+        git_ops.capture_diff(repo, "main", include_dirty=True)
+
+
+def test_capture_diff_include_dirty_on_main_with_no_committed_delta(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "a.txt").write_text("base\n")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-m", "init")
+    (repo / "a.txt").write_text("base\nlocal\n")
+
+    res = git_ops.capture_diff(repo, "main", include_dirty=True)
+
+    assert res.base == "main"
+    assert res.files_total == 1
+    assert "+local" in res.diff
 
 
 def test_capture_diff_two_dot_includes_base_drift(tmp_path: Path) -> None:
