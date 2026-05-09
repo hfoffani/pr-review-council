@@ -473,6 +473,10 @@ def help_command(
 
 
 def _print_subcommands() -> None:
+    print("Multi-LLM council code review for pull requests and local branches.")
+    print("Reviews GitHub or BitBucket PR URLs, or a local git diff <base>..<branch>.")
+    print("A panel of LLMs critique each other; a Chairman synthesizes the verdict.")
+    print()
     print("Commands:")
     for name, description in SUBCOMMANDS.items():
         print(f"  {name:<8} {description}")
