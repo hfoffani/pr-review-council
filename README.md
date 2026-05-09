@@ -2,8 +2,8 @@
 
 ![prreviewllmcouncil](images/banner-pr-council.png)
 
-Multi-LLM council code review for local git branches. Inspired by Andrej Karpathy's
-[LLM Council](https://github.com/karpathy/llm-council),
+Multi-LLM council code review for local git branches. Unashamedly inspired by Andrej
+Karpathy's [LLM Council](https://github.com/karpathy/llm-council) (see image 😉),
 `prc` takes a repo + branch, computes the diff against the auto-detected base,
 sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent review in parallel,
 has them critique each other, then a configurable Chairman LLM synthesizes
