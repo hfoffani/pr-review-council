@@ -39,6 +39,20 @@ def _run(cmd: list[str], cwd: Path) -> str:
     return res.stdout
 
 
+def repo_root(path: Path) -> Path:
+    """Return the git repo root for any path inside a repository."""
+    if not path.exists():
+        raise GitError(f"{path} does not exist")
+    try:
+        out = _run(["git", "rev-parse", "--show-toplevel"], path)
+    except GitError as e:
+        raise GitError(f"{path} is not a git repository") from e
+    top = out.strip()
+    if not top:
+        raise GitError(f"{path} is not a git repository")
+    return Path(top)
+
+
 def detect_base(repo: Path, branch: str) -> str:
     """Return the likely target ref for a two-dot review diff."""
     scores: list[tuple[int, int, int, int, str]] = []
@@ -103,6 +117,7 @@ def _numstat_score(numstat: str) -> tuple[int, int, int]:
 
 
 def current_branch(repo: Path) -> str:
+    repo = repo_root(repo)
     branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo).strip()
     if not branch or branch == "HEAD":
         raise GitError(
@@ -118,8 +133,7 @@ def capture_diff(
     *,
     max_bytes: int = 600_000,
 ) -> DiffResult:
-    if not (repo / ".git").exists():
-        raise GitError(f"{repo} is not a git repository")
+    repo = repo_root(repo)
     base_ref = base or detect_base(repo, branch)
     diff_range = f"{base_ref}..{branch}"
     diff = _run(["git", "diff", diff_range], repo)

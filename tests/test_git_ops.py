@@ -139,6 +139,25 @@ def test_current_branch(repo_with_branch) -> None:
     assert git_ops.current_branch(repo) == branch
 
 
+def test_repo_root_resolves_from_subdirectory(repo_with_branch) -> None:
+    repo, _, _ = repo_with_branch
+    sub = repo / "nested" / "deeper"
+    sub.mkdir(parents=True)
+    assert git_ops.repo_root(sub).resolve() == repo.resolve()
+
+
+def test_repo_root_rejects_non_repo(tmp_path: Path) -> None:
+    with pytest.raises(git_ops.GitError, match="is not a git repository"):
+        git_ops.repo_root(tmp_path)
+
+
+def test_current_branch_from_subdirectory(repo_with_branch) -> None:
+    repo, _, branch = repo_with_branch
+    sub = repo / "nested"
+    sub.mkdir()
+    assert git_ops.current_branch(sub) == branch
+
+
 def test_capture_diff_two_dot(repo_with_branch) -> None:
     repo, base, branch = repo_with_branch
     res = git_ops.capture_diff(repo, branch)
@@ -148,6 +167,16 @@ def test_capture_diff_two_dot(repo_with_branch) -> None:
     assert not res.truncated
     assert "+more" in res.diff
     assert "+world" in res.diff
+
+
+def test_capture_diff_from_subdirectory(repo_with_branch) -> None:
+    repo, base, branch = repo_with_branch
+    sub = repo / "nested"
+    sub.mkdir()
+    res = git_ops.capture_diff(sub, branch)
+    assert res.base == base
+    assert res.files_total == 2
+    assert "+more" in res.diff
 
 
 def test_capture_diff_two_dot_includes_base_drift(tmp_path: Path) -> None:
