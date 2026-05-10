@@ -1050,3 +1050,26 @@ def test_help_config_shows_options() -> None:
     assert "--edit" in res.stdout
     assert "--edit-prompts" in res.stdout
     assert "--config PATH" in res.stdout
+
+
+def test_version_subcommand_prints_version() -> None:
+    from prc import __version__
+
+    res = runner.invoke(cli.app, ["version"])
+
+    assert res.exit_code == 0
+    assert res.stdout.strip() == f"prc {__version__}"
+
+
+def test_help_version_shows_usage() -> None:
+    res = runner.invoke(cli.app, ["help", "version"])
+
+    assert res.exit_code == 0
+    assert "Usage: prc version" in res.stdout
+
+
+def test_subcommand_index_lists_version() -> None:
+    res = runner.invoke(cli.app, [])
+
+    assert res.exit_code == 0
+    assert "version" in res.stdout
