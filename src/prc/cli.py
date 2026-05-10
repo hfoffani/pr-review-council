@@ -14,6 +14,7 @@ import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from . import __version__
 from . import config as cfg
 from . import prompts as prompt_cfg
 from .chairman import synthesize
@@ -39,6 +40,7 @@ app = typer.Typer(
 SUBCOMMANDS = {
     "review": "Review the current repo/branch with the configured council.",
     "config": "Show configuration, provider routing, and API-key presence.",
+    "version": "Show the installed prc version.",
     "help": "Show help for a subcommand.",
 }
 
@@ -442,6 +444,11 @@ def config_command(
         raise typer.Exit(5)
 
 
+@app.command("version", help=SUBCOMMANDS["version"])
+def version_command() -> None:
+    print(f"prc {__version__}")
+
+
 @app.command("help", help=SUBCOMMANDS["help"])
 def help_command(
     topic: Annotated[
@@ -458,8 +465,14 @@ def help_command(
     if topic == "config":
         print(CONFIG_HELP)
         return
+    if topic == "version":
+        print("Usage: prc version\n\nShow the installed prc version.")
+        return
     if topic == "help":
-        print("Usage: prc help [review|config]\n\nShow help for a subcommand.")
+        print(
+            "Usage: prc help [review|config|version]\n\n"
+            "Show help for a subcommand."
+        )
         return
     print(f"prc: unknown help topic {topic!r}", file=sys.stderr)
     raise typer.Exit(2)
