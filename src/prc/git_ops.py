@@ -151,6 +151,12 @@ def current_branch(repo: Path) -> str:
     return branch
 
 
+def has_dirty_changes(repo: Path) -> bool:
+    repo = repo_root(repo)
+    status = _run(["git", "status", "--porcelain=v1", "-z"], repo)
+    return bool(status)
+
+
 def capture_diff(
     repo: Path,
     branch: str,

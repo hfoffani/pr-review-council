@@ -73,6 +73,65 @@ def test_cli_git_error_maps_to_exit_4(
     assert "bad diff" in res.stderr
 
 
+def test_cli_warns_when_local_repo_has_dirty_changes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(cli, "has_dirty_changes", lambda repo: True)
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
+            base="main",
+            branch=branch,
+            diff="",
+            files_total=0,
+            files_included=0,
+            truncated=False,
+            bytes_total=0,
+        ),
+    )
+
+    res = runner.invoke(cli.app, ["review", str(tmp_path), "feature"])
+
+    assert res.exit_code == 0
+    assert "warning: local repo has uncommitted changes" in res.stderr
+    assert "--include-dirty" in res.stderr
+
+
+def test_cli_does_not_warn_for_include_dirty(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(cli.cfg, "load", lambda explicit=None: _config())
+    monkeypatch.setattr(
+        cli,
+        "has_dirty_changes",
+        lambda repo: (_ for _ in ()).throw(
+            AssertionError("dirty check should not run")
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "capture_diff",
+        lambda repo, branch, base, include_dirty=False, max_bytes=600_000: DiffResult(
+            base="main",
+            branch=branch,
+            diff="",
+            files_total=0,
+            files_included=0,
+            truncated=False,
+            bytes_total=0,
+        ),
+    )
+
+    res = runner.invoke(
+        cli.app, ["review", str(tmp_path), "feature", "--include-dirty"]
+    )
+
+    assert res.exit_code == 0
+    assert "--include-dirty to include" not in res.stderr
+
+
 def test_cli_config_error_maps_to_exit_5(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         cli.cfg,

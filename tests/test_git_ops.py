@@ -168,6 +168,24 @@ def test_current_branch_from_subdirectory(repo_with_branch) -> None:
     assert git_ops.current_branch(sub) == branch
 
 
+def test_has_dirty_changes_detects_staged_unstaged_and_untracked(
+    repo_with_branch,
+) -> None:
+    repo, _, _ = repo_with_branch
+
+    assert git_ops.has_dirty_changes(repo) is False
+
+    (repo / "a.txt").write_text("hello\nmore\nunstaged\n")
+    assert git_ops.has_dirty_changes(repo) is True
+
+    _git(repo, "checkout", "--", "a.txt")
+    (repo / "c.txt").write_text("untracked\n")
+    assert git_ops.has_dirty_changes(repo) is True
+
+    _git(repo, "add", "c.txt")
+    assert git_ops.has_dirty_changes(repo) is True
+
+
 def test_capture_diff_two_dot(repo_with_branch) -> None:
     repo, base, branch = repo_with_branch
     res = git_ops.capture_diff(repo, branch)
