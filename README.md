@@ -60,11 +60,16 @@ Requires `uv` 0.1.28 or newer. Install `uv` from the
 uv tool install git+https://github.com/hfoffani/pr-review-council.git
 ```
 
-Then run `prc` directly:
+Then confg `prc` to add API keys and select models:
 
 ```bash
-prc config
-prc review /path/to/repo my-feature-branch
+prc config --edit
+```
+
+The run:
+
+```bash
+prc review https://github.com/MY-USER/MY-REPO/pull/99999
 ```
 
 Shortcut installer:
