@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
 import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -162,9 +162,7 @@ def review(
     ] = 600_000,
     timeout: Annotated[
         float,
-        typer.Option(
-            "--timeout", help="Per-model API call timeout in seconds"
-        ),
+        typer.Option("--timeout", help="Per-model API call timeout in seconds"),
     ] = 180.0,
     verbose: Annotated[
         bool,
@@ -172,12 +170,10 @@ def review(
     ] = False,
 ) -> None:
     dry_run_explicit = (
-        ctx.get_parameter_source("dry_run")
-        == click.core.ParameterSource.COMMANDLINE
+        ctx.get_parameter_source("dry_run") == click.core.ParameterSource.COMMANDLINE
     )
     post_explicit = (
-        ctx.get_parameter_source("post")
-        == click.core.ParameterSource.COMMANDLINE
+        ctx.get_parameter_source("post") == click.core.ParameterSource.COMMANDLINE
     )
     if dry_run_explicit and post_explicit and dry_run and post:
         print(
@@ -236,9 +232,7 @@ def review(
             f"prc: created default config at {e.created_at}",
             file=sys.stderr,
         )
-        print(
-            "prc: edit it to add API keys, then rerun", file=sys.stderr
-        )
+        print("prc: edit it to add API keys, then rerun", file=sys.stderr)
         raise typer.Exit(5)
     except (FileNotFoundError, ValueError) as e:
         print(f"prc: config error: {e}", file=sys.stderr)
@@ -332,8 +326,7 @@ def review(
 
         if len(outcome.r1) < 2:
             print(
-                f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); "
-                "aborting",
+                f"prc: council collapsed (only {len(outcome.r1)} R1 reviews); aborting",
                 file=sys.stderr,
             )
             for letter, why in outcome.failures.items():
@@ -357,7 +350,9 @@ def review(
             final = _append_reviewer_identities(final, outcome)
         if not dry_run_mode:
             if remote_url is None or platform is None:
-                print("prc: --post requires a supported pull request URL", file=sys.stderr)
+                print(
+                    "prc: --post requires a supported pull request URL", file=sys.stderr
+                )
                 raise typer.Exit(2)
             progress(PROGRESS_POST)
             try:
@@ -423,9 +418,7 @@ def config_command(
             f"prc: created default config at {e.created_at}",
             file=sys.stderr,
         )
-        print(
-            "prc: edit it to add API keys, then rerun", file=sys.stderr
-        )
+        print("prc: edit it to add API keys, then rerun", file=sys.stderr)
         raise typer.Exit(5)
     except (FileNotFoundError, ValueError) as e:
         print(f"prc: config error: {e}", file=sys.stderr)
@@ -473,6 +466,8 @@ def help_command(
 
 
 def _print_subcommands() -> None:
+    print("prc: PR Review Council")
+    print()
     print("Multi-LLM council code review for pull requests and local branches.")
     print("Reviews GitHub or BitBucket PR URLs, or a local git diff <base>..<branch>.")
     print("A panel of LLMs critique each other; a Chairman synthesizes the verdict.")
@@ -511,11 +506,7 @@ def _review_diff(
         reviewers: list[Reviewer] = []
         chair_seat_taken = False
         for m in council_models:
-            if (
-                on_council_flag
-                and m == chair_model
-                and not chair_seat_taken
-            ):
+            if on_council_flag and m == chair_model and not chair_seat_taken:
                 reviewers.append(chair)
                 chair_seat_taken = True
             else:
@@ -559,9 +550,7 @@ def _review_diff(
     if len(outcome.r1) >= 2:
         progress(PROGRESS_CHAIR)
         try:
-            final = synthesize(
-                chair, outcome, ctx, timeout=timeout, prompts=prompts
-            )
+            final = synthesize(chair, outcome, ctx, timeout=timeout, prompts=prompts)
         except Exception as e:
             chair_error = e
 
@@ -569,9 +558,7 @@ def _review_diff(
 
 
 @contextmanager
-def _review_progress(
-    *, enabled: bool
-) -> Iterator[Callable[[str], None]]:
+def _review_progress(*, enabled: bool) -> Iterator[Callable[[str], None]]:
     def noop(_message: str) -> None:
         return
 
@@ -601,7 +588,7 @@ def _review_progress(
 
 
 def _council_progress(
-    progress: Callable[[str], None]
+    progress: Callable[[str], None],
 ) -> Callable[[CouncilPhase], None]:
     def update(phase: CouncilPhase) -> None:
         if phase == "r1":
@@ -616,9 +603,7 @@ def _format_exception(error: BaseException) -> str:
     return repr(error)
 
 
-def _append_reviewer_identities(
-    final: str, outcome: CouncilOutcome
-) -> str:
+def _append_reviewer_identities(final: str, outcome: CouncilOutcome) -> str:
     lines = [
         "",
         "---",
