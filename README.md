@@ -210,6 +210,10 @@ prc review --include-dirty
 This option only applies to local repository reviews. It includes staged,
 unstaged, and untracked files from the checked-out branch, and it cannot be
 used when reviewing a different branch name or a remote pull request URL.
+If you run a local review while the repository has uncommitted changes and
+do not pass `--include-dirty`, `prc` prints a warning to stderr so you can
+decide whether those local edits should be part of the review. Remote PR URL
+reviews keep their existing behavior and do not inspect local dirty files.
 
 ### Reviewing remote PRs
 
