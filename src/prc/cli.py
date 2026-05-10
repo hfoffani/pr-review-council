@@ -20,7 +20,13 @@ from . import prompts as prompt_cfg
 from .chairman import synthesize
 from .context import DiffOnlyContext, PullRequestContext
 from .council import CouncilOutcome, CouncilPhase, run_council
-from .git_ops import DiffResult, GitError, capture_diff, current_branch
+from .git_ops import (
+    DiffResult,
+    GitError,
+    capture_diff,
+    current_branch,
+    has_dirty_changes,
+)
 from .pr_platforms import (
     PRPlatformError,
     PullRequestMetadata,
@@ -284,6 +290,17 @@ def review(
                     raise typer.Exit(4)
 
             try:
+                if not include_dirty:
+                    try:
+                        dirty = has_dirty_changes(repo_path)
+                    except GitError:
+                        dirty = False
+                    if dirty:
+                        print(
+                            "prc: warning: local repo has uncommitted changes; "
+                            "use --include-dirty to include them in the review",
+                            file=sys.stderr,
+                        )
                 diff = capture_diff(
                     repo_path,
                     branch,
