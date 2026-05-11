@@ -188,7 +188,7 @@ def test_cli_happy_path_prints_final_review(
     def synthesize(chair, outcome, ctx, timeout, prompts):
         assert chair.model == "chair-model"
         assert set(outcome.r1) == {"A", "B"}
-        assert prompts.chairman
+        assert prompts.chair
         return "final review"
 
     monkeypatch.setattr(cli, "make_reviewer", make_reviewer)
@@ -242,7 +242,7 @@ def test_cli_disclose_appends_reviewer_identities(
     def synthesize(chair, outcome, ctx, timeout, prompts):
         assert "model-a" not in outcome.r1["A"][1]
         assert "model-b" not in outcome.r1["B"][1]
-        assert prompts.chairman
+        assert prompts.chair
         return "final review"
 
     monkeypatch.setattr(cli, "synthesize", synthesize)
@@ -650,7 +650,7 @@ def test_cli_uses_custom_prompts_file(
     prompts_path.write_text(
         '[reviewer]\nsystem = "custom reviewer"\n\n'
         '[cross_eval]\nsystem = "custom cross eval"\n\n'
-        '[chairman]\nsystem = "custom chair"\n'
+        '[chair]\nsystem = "custom chair"\n'
     )
 
     class FakeReviewer:
@@ -686,7 +686,7 @@ def test_cli_uses_custom_prompts_file(
         )
 
     def synthesize(chair, outcome, ctx, timeout, prompts):
-        assert prompts.chairman == "custom chair"
+        assert prompts.chair == "custom chair"
         return "final"
 
     monkeypatch.setattr(cli, "run_council", run_council)
@@ -1077,7 +1077,7 @@ def test_config_edit_prompts_creates_and_opens_file(
     assert calls == [["editor", "--wait", str(prompts_path)]]
     assert "[reviewer]" in prompts_path.read_text()
     assert "[cross_eval]" in prompts_path.read_text()
-    assert "[chairman]" in prompts_path.read_text()
+    assert "[chair]" in prompts_path.read_text()
 
 
 def test_config_edit_requires_editor(monkeypatch) -> None:

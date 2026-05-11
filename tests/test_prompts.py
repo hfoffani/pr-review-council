@@ -23,7 +23,36 @@ def test_load_prompts_applies_partial_overrides(tmp_path: Path) -> None:
 
     assert loaded.reviewer == "custom reviewer"
     assert loaded.cross_eval == prompts.DEFAULT_PROMPTS.cross_eval
-    assert loaded.chairman == prompts.DEFAULT_PROMPTS.chairman
+    assert loaded.chair == prompts.DEFAULT_PROMPTS.chair
+
+
+def test_load_prompts_accepts_legacy_chairman_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "prompts.toml"
+    path.write_text('[chairman]\nsystem = "legacy chair prompt"\n')
+
+    loaded = prompts.load_prompts(path)
+
+    assert loaded.chair == "legacy chair prompt"
+    err = capsys.readouterr().err
+    assert "[chairman] is deprecated" in err
+    assert "[chair]" in err
+
+
+def test_load_prompts_prefers_chair_over_legacy_chairman(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "prompts.toml"
+    path.write_text(
+        '[chair]\nsystem = "new chair"\n\n'
+        '[chairman]\nsystem = "legacy chair"\n'
+    )
+
+    loaded = prompts.load_prompts(path)
+
+    assert loaded.chair == "new chair"
+    assert "deprecated" not in capsys.readouterr().err
 
 
 def test_load_prompts_rejects_bad_shapes(tmp_path: Path) -> None:

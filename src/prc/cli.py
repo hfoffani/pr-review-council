@@ -17,7 +17,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from . import __version__
 from . import config as cfg
 from . import prompts as prompt_cfg
-from .chairman import synthesize
+from .chair import synthesize
 from .context import DiffOnlyContext, PullRequestContext
 from .council import CouncilOutcome, CouncilPhase, run_council
 from .git_ops import (
@@ -59,7 +59,7 @@ Review a local git branch or remote pull request URL with the configured LLM cou
 Options:
   --base BASE                 Target branch/ref to compare against.
   --council MODEL[,MODEL...]  Override config council.
-  --chairman MODEL            Override config chair.
+  --chair MODEL               Override config chair.
   --chair-on-council          Include chair as a council member.
   --no-chair-on-council       Do not include chair as a council member.
   --dry-run                   Show review output without posting.
@@ -83,7 +83,7 @@ Options:
   --edit-prompts              Create/open custom prompt overrides in $EDITOR.
   --config PATH               Explicit config file.
   --council MODEL[,MODEL...]  Override config council for display.
-  --chairman MODEL            Override config chair for display.
+  --chair MODEL               Override config chair for display.
   --chair-on-council          Include chair in displayed council.
   --no-chair-on-council       Do not include chair in displayed council.
 """
@@ -120,9 +120,9 @@ def review(
             "--council", help="Comma-separated council models (overrides config)"
         ),
     ] = None,
-    chairman: Annotated[
+    chair: Annotated[
         Optional[str],
-        typer.Option("--chairman", help="Chair model (overrides config)"),
+        typer.Option("--chair", help="Chair model (overrides config)"),
     ] = None,
     chair_on_council: Annotated[
         bool,
@@ -251,7 +251,7 @@ def review(
         if council
         else list(c.council)
     )
-    chair_model = chairman or c.chair_model
+    chair_model = chair or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
 
     final: str | None = None
@@ -411,9 +411,9 @@ def config_command(
             "--council", help="Comma-separated council models (overrides config)"
         ),
     ] = None,
-    chairman: Annotated[
+    chair: Annotated[
         Optional[str],
-        typer.Option("--chairman", help="Chair model (overrides config)"),
+        typer.Option("--chair", help="Chair model (overrides config)"),
     ] = None,
     chair_on_council: Annotated[
         bool,
@@ -452,7 +452,7 @@ def config_command(
         if council
         else list(c.council)
     )
-    chair_model = chairman or c.chair_model
+    chair_model = chair or c.chair_model
     on_council_flag = chair_on_council or c.chair_on_council
     try:
         _print_config(c, council_models, chair_model, on_council_flag)
@@ -500,7 +500,7 @@ def _print_subcommands() -> None:
     print()
     print("Multi-LLM council code review for pull requests and local branches.")
     print("Reviews GitHub or BitBucket PR URLs, or a local git diff <base>..<branch>.")
-    print("A panel of LLMs critique each other; a Chairman synthesizes the verdict.")
+    print("A panel of LLMs critique each other; a Chair synthesizes the verdict.")
     print()
     print("Commands:")
     for name, description in SUBCOMMANDS.items():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tomllib
 from dataclasses import dataclass
 import os
@@ -41,7 +42,7 @@ Output markdown with one `### Reviewer X` section per peer, then a final \
 where it splits.
 """
 
-CHAIRMAN_SYSTEM = """\
+CHAIR_SYSTEM = """\
 You are the chair of a code-review council. You receive (1) independent \
 reviews from N reviewers and (2) each reviewer's critique of the others. \
 Produce the final pull-request review for the author.
@@ -72,13 +73,13 @@ A single line: `Verdict: approve` | `Verdict: request-changes` | `Verdict: comme
 class PromptSet:
     reviewer: str
     cross_eval: str
-    chairman: str
+    chair: str
 
 
 DEFAULT_PROMPTS = PromptSet(
     reviewer=REVIEWER_SYSTEM,
     cross_eval=CROSS_EVAL_SYSTEM,
-    chairman=CHAIRMAN_SYSTEM,
+    chair=CHAIR_SYSTEM,
 )
 
 APP_CONFIG_DIR = "pr-review-council"
@@ -118,12 +119,21 @@ def load_prompts(path: Path | None = None) -> PromptSet:
     if not isinstance(data, dict):
         raise ValueError(f"{path}: prompts file must be a TOML table")
 
+    chair_data = data
+    if "chair" not in data and "chairman" in data:
+        print(
+            f"prc: warning: {path}: [chairman] is deprecated; "
+            "rename the section to [chair]",
+            file=sys.stderr,
+        )
+        chair_data = {**data, "chair": data["chairman"]}
+
     return PromptSet(
         reviewer=_prompt_value(path, data, "reviewer", DEFAULT_PROMPTS.reviewer),
         cross_eval=_prompt_value(
             path, data, "cross_eval", DEFAULT_PROMPTS.cross_eval
         ),
-        chairman=_prompt_value(path, data, "chairman", DEFAULT_PROMPTS.chairman),
+        chair=_prompt_value(path, chair_data, "chair", DEFAULT_PROMPTS.chair),
     )
 
 
@@ -149,7 +159,7 @@ def _default_prompts_template() -> str:
         [
             _prompt_section("reviewer", DEFAULT_PROMPTS.reviewer),
             _prompt_section("cross_eval", DEFAULT_PROMPTS.cross_eval),
-            _prompt_section("chairman", DEFAULT_PROMPTS.chairman),
+            _prompt_section("chair", DEFAULT_PROMPTS.chair),
             "",
         ]
     )

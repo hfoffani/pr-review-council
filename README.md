@@ -6,7 +6,7 @@ Multi-LLM council code review for local git branches. Unashamedly inspired by An
 Karpathy's [LLM Council](https://github.com/karpathy/llm-council) (see image 😉),
 `prc` takes a repo + branch, computes the diff against the auto-detected base,
 sends it to a panel of LLMs (Claude, GPT, Gemini, Grok, ...) for independent review in parallel,
-has them critique each other, then a configurable Chairman LLM synthesizes
+has them critique each other, then a configurable Chair LLM synthesizes
 the council's reviews into a final markdown PR review printed to stdout.
 
 
@@ -46,7 +46,7 @@ Verdict: request-changes
 1. **Diff capture** — `git diff <base>...<branch>`. Base auto-detected: `<branch>@{upstream}` → `main` → `master` → `origin/main` → `origin/master`. Override with `--base`. For local repository reviews, `--include-dirty` instead reviews the checked-out branch plus staged, unstaged, and untracked local changes.
 2. **Round 1 (parallel)** — every council member reviews the diff blind.
 3. **Round 2 (parallel)** — each member is shown the others' reviews (anonymized as Reviewer A/B/C, own review excluded) and critiques peers.
-4. **Round 3** — the Chairman receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
+4. **Round 3** — the Chair receives the diff + all R1 + all R2 (still anonymized) and synthesizes the final markdown.
 
 Models never see real identities of peers; the orchestrator holds the letter mapping in memory only.
 
@@ -267,7 +267,7 @@ prc
 prc review [repo|pr-url] [branch]
     [--base BASE]                       # target branch/ref to compare against
     [--council MODEL[,MODEL...]]        # override config council
-    [--chairman MODEL]                  # override config chair
+    [--chair MODEL]                     # override config chair
     [--chair-on-council]                # include chair as a council voice
     [--dry-run]                         # print review without posting
     [--post]                            # post review; default for PR URLs
@@ -283,7 +283,7 @@ prc config
     [--edit-prompts]                    # create/open custom prompts in $EDITOR
     [--config PATH]                     # explicit config file
     [--council MODEL[,MODEL...]]        # override displayed council
-    [--chairman MODEL]                  # override displayed chair
+    [--chair MODEL]                     # override displayed chair
     [--chair-on-council]                # include chair in displayed council
 
 prc help review

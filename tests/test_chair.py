@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prc.chairman import synthesize
+from prc.chair import synthesize
 from prc.context import DiffOnlyContext
 from prc.council import CouncilOutcome
 from prc.prompts import DEFAULT_PROMPTS, PromptSet
@@ -34,13 +34,13 @@ def test_chair_prompt_keeps_reviewer_models_anonymous() -> None:
     assert "model-a" not in chair.user_prompt
 
 
-def test_custom_chairman_prompt_is_used() -> None:
+def test_custom_chair_prompt_is_used() -> None:
     chair = FakeChair()
     outcome = CouncilOutcome(r1={"A": ("model-a", "review a")})
     prompt_set = PromptSet(
         reviewer=DEFAULT_PROMPTS.reviewer,
         cross_eval=DEFAULT_PROMPTS.cross_eval,
-        chairman="custom chair prompt",
+        chair="custom chair prompt",
     )
 
     final = synthesize(
