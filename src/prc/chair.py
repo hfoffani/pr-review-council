@@ -29,4 +29,4 @@ def synthesize(
         f"<round-1-reviews>\n{r1_md}\n</round-1-reviews>\n\n"
         f"<round-2-cross-evaluations>\n{r2_md}\n</round-2-cross-evaluations>"
     )
-    return chair.chat(prompt_set.chairman, user, timeout=timeout)
+    return chair.chat(prompt_set.chair, user, timeout=timeout)

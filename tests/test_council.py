@@ -139,7 +139,7 @@ def test_custom_prompts_are_used_for_both_council_rounds() -> None:
     prompt_set = PromptSet(
         reviewer="custom reviewer prompt",
         cross_eval="custom cross eval prompt",
-        chairman=DEFAULT_PROMPTS.chairman,
+        chair=DEFAULT_PROMPTS.chair,
     )
 
     out = run_council(
